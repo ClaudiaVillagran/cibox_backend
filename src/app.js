@@ -10,6 +10,8 @@ import vendorRoutes from "./routes/vendorRoutes.js";
 import pantryRoutes from "./routes/pantryRoutes.js";
 import adminRoutes from "./routes/adminRoutes.js";
 import couponRoutes from "./routes/couponRoutes.js";
+import vendorDashboardRoutes from "./routes/vendorDashboardRoutes.js";
+
 
 const app = express();
 
@@ -31,6 +33,6 @@ app.use("/api/vendors", vendorRoutes);
 app.use("/api/pantry", pantryRoutes);
 app.use("/api/admin", adminRoutes);
 app.use("/api/coupons", couponRoutes);
-
+app.use("/api/vendor/dashboard", vendorDashboardRoutes);
 
 export default app;
