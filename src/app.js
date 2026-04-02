@@ -7,7 +7,7 @@ import pricingRoutes from './routes/pricingRoutes.js';
 import customBoxRoutes from './routes/customBoxRoutes.js';
 import categoryRoutes from "./routes/categoryRoutes.js";
 import vendorRoutes from "./routes/vendorRoutes.js";
-
+import pantryRoutes from "./routes/pantryRoutes.js";
 
 const app = express();
 
@@ -26,7 +26,7 @@ app.use('/api/pricing', pricingRoutes);
 app.use('/api/custom-box', customBoxRoutes);
 app.use("/api/categories", categoryRoutes);
 app.use("/api/vendors", vendorRoutes);
-
+app.use("/api/pantry", pantryRoutes);
 
 
 export default app;

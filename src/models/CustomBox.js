@@ -10,6 +10,7 @@ const customBoxItemSchema = new mongoose.Schema(
     name: {
       type: String,
       required: true,
+      trim: true,
     },
     quantity: {
       type: Number,
@@ -19,13 +20,16 @@ const customBoxItemSchema = new mongoose.Schema(
     unit_price: {
       type: Number,
       required: true,
+      min: 0,
     },
     original_unit_price: {
       type: Number,
+      min: 0,
     },
     tier_label: {
       type: String,
       required: true,
+      trim: true,
     },
     discount_applied: {
       type: Boolean,
@@ -34,17 +38,26 @@ const customBoxItemSchema = new mongoose.Schema(
     discount_percent: {
       type: Number,
       default: 0,
+      min: 0,
     },
     discount_amount_per_unit: {
       type: Number,
       default: 0,
+      min: 0,
+    },
+    discount_source: {
+      type: String,
+      enum: ["pantry", "cibox_plus", null],
+      default: null,
     },
     subtotal: {
       type: Number,
       required: true,
+      min: 0,
     },
     original_subtotal: {
       type: Number,
+      min: 0,
     },
   },
   { _id: false }
@@ -69,6 +82,7 @@ const customBoxSchema = new mongoose.Schema(
     total: {
       type: Number,
       default: 0,
+      min: 0,
     },
   },
   {

@@ -90,6 +90,7 @@ export const addItemToCustomBox = async (req, res) => {
       customBox.items[existingItemIndex].discount_applied = pricing.discount_applied;
       customBox.items[existingItemIndex].discount_percent = pricing.discount_percent;
       customBox.items[existingItemIndex].discount_amount_per_unit = pricing.discount_amount_per_unit;
+      customBox.items[existingItemIndex].discount_source = pricing.discount_source;
       customBox.items[existingItemIndex].subtotal = pricing.subtotal;
       customBox.items[existingItemIndex].original_subtotal = pricing.original_subtotal;
     } else {
@@ -110,6 +111,7 @@ export const addItemToCustomBox = async (req, res) => {
         discount_applied: pricing.discount_applied,
         discount_percent: pricing.discount_percent,
         discount_amount_per_unit: pricing.discount_amount_per_unit,
+        discount_source: pricing.discount_source,
         subtotal: pricing.subtotal,
         original_subtotal: pricing.original_subtotal,
       });
@@ -188,6 +190,7 @@ export const updateCustomBoxItem = async (req, res) => {
     customBox.items[itemIndex].discount_applied = pricing.discount_applied;
     customBox.items[itemIndex].discount_percent = pricing.discount_percent;
     customBox.items[itemIndex].discount_amount_per_unit = pricing.discount_amount_per_unit;
+    customBox.items[itemIndex].discount_source = pricing.discount_source;
     customBox.items[itemIndex].subtotal = pricing.subtotal;
     customBox.items[itemIndex].original_subtotal = pricing.original_subtotal;
 

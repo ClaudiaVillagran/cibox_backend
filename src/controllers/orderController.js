@@ -65,6 +65,7 @@ export const createOrderFromCustomBox = async (req, res) => {
         discount_applied: item.discount_applied,
         discount_percent: item.discount_percent,
         discount_amount_per_unit: item.discount_amount_per_unit,
+        discount_source: item.discount_source,
       });
     }
 
@@ -92,10 +93,34 @@ export const createOrderFromCustomBox = async (req, res) => {
 
     customBox.status = "confirmed";
     await customBox.save();
+    const existingDraft = await CustomBox.findOne({
+      user_id: userId,
+      status: "draft",
+    });
+
+    if (!existingDraft) {
+      await CustomBox.create({
+        user_id: userId,
+        status: "draft",
+        items: [],
+        total: 0,
+      });
+    }
+    const totalOriginal = customBox.items.reduce(
+      (acc, item) => acc + (item.original_subtotal || item.subtotal),
+      0,
+    );
+
+    const totalDiscount = totalOriginal - customBox.total;
 
     res.status(201).json({
       message: "Orden creada correctamente desde la caja personalizada",
       order,
+      summary: {
+        total_original: totalOriginal,
+        total_final: customBox.total,
+        total_discount: totalDiscount,
+      },
     });
   } catch (error) {
     res.status(500).json({
