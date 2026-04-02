@@ -1,4 +1,5 @@
 import Coupon from "../models/Coupon.js";
+import { createNotificationsForRole } from "../utils/notification.js";
 
 export const createCoupon = async (req, res) => {
   try {
@@ -38,6 +39,18 @@ export const createCoupon = async (req, res) => {
       max_uses_per_user,
       first_purchase_only,
       expires_at,
+    });
+    await createNotificationsForRole({
+      role: "customer",
+      type: "coupon_created",
+      title: "Nuevo cupón disponible",
+      message: `Hay un nuevo cupón disponible: ${coupon.code}.`,
+      data: {
+        coupon_id: coupon._id,
+        code: coupon.code,
+        type: coupon.type,
+        value: coupon.value,
+      },
     });
 
     res.status(201).json({

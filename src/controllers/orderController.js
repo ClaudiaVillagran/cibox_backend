@@ -3,6 +3,11 @@ import Order from "../models/Order.js";
 import Product from "../models/Product.js";
 import Coupon from "../models/Coupon.js";
 import CouponUsage from "../models/CouponUsage.js";
+import Vendor from "../models/Vendor.js";
+import {
+  createNotification,
+  createNotificationsForRole,
+} from "../utils/notification.js";
 import {
   calculateCouponDiscount,
   validateCouponForUser,
@@ -63,6 +68,7 @@ export const createOrderFromCustomBox = async (req, res) => {
         subtotal: subtotalBeforeCoupon,
       });
     }
+
     for (const item of customBox.items) {
       const product = await Product.findById(item.product_id);
 
@@ -104,7 +110,7 @@ export const createOrderFromCustomBox = async (req, res) => {
       await Product.findByIdAndUpdate(
         item.product_id,
         { $inc: { stock: -item.quantity } },
-        { new: true },
+        { new: true }
       );
     }
 
@@ -131,6 +137,56 @@ export const createOrderFromCustomBox = async (req, res) => {
           },
     });
 
+    await createNotification({
+      userId,
+      type: "order_created",
+      title: "Tu pedido fue creado",
+      message: `Tu pedido fue creado por un total de $${order.total}.`,
+      data: {
+        order_id: order._id,
+        total: order.total,
+      },
+    });
+
+    await createNotificationsForRole({
+      role: "admin",
+      type: "admin_new_order",
+      title: "Nueva compra realizada",
+      message: `Se creó una nueva orden por $${order.total}.`,
+      data: {
+        order_id: order._id,
+        user_id: userId,
+        total: order.total,
+        source: order.source,
+      },
+    });
+
+    const notifiedVendorIds = new Set();
+
+    for (const item of orderItems) {
+      const product = await Product.findById(item.product_id);
+
+      if (!product?.vendor?.id) continue;
+      if (notifiedVendorIds.has(product.vendor.id)) continue;
+
+      const vendor = await Vendor.findById(product.vendor.id);
+
+      if (vendor?.user_id) {
+        await createNotification({
+          userId: vendor.user_id,
+          type: "vendor_new_order",
+          title: "Recibiste un nuevo pedido",
+          message: `Uno o más de tus productos fueron comprados en la orden ${order._id}.`,
+          data: {
+            order_id: order._id,
+            vendor_id: vendor._id,
+          },
+        });
+
+        notifiedVendorIds.add(product.vendor.id);
+      }
+    }
+
     if (coupon && couponDiscount > 0) {
       coupon.used_count += 1;
       await coupon.save();
@@ -143,8 +199,10 @@ export const createOrderFromCustomBox = async (req, res) => {
         discount_amount: couponDiscount,
       });
     }
+
     customBox.status = "confirmed";
     await customBox.save();
+
     const existingDraft = await CustomBox.findOne({
       user_id: userId,
       status: "draft",
@@ -158,9 +216,10 @@ export const createOrderFromCustomBox = async (req, res) => {
         total: 0,
       });
     }
+
     const totalOriginal = customBox.items.reduce(
       (acc, item) => acc + (item.original_subtotal || item.subtotal),
-      0,
+      0
     );
 
     const totalDiscountFromItems = totalOriginal - customBox.total;

@@ -1,5 +1,6 @@
 import Vendor from "../models/Vendor.js";
 import User from "../models/User.js";
+import { createNotificationsForRole } from "../utils/notification.js";
 
 export const createVendor = async (req, res) => {
   try {
@@ -36,6 +37,18 @@ export const createVendor = async (req, res) => {
     user.role = "vendor";
     await user.save();
 
+    await createNotificationsForRole({
+      role: "admin",
+      type: "admin_new_vendor_request",
+      title: "Nueva solicitud de vendor",
+      message: `La tienda ${vendor.store_name} fue creada y está pendiente de revisión.`,
+      data: {
+        vendor_id: vendor._id,
+        user_id: vendor.user_id,
+        store_name: vendor.store_name,
+      },
+    });
+
     res.status(201).json({
       message: "Vendor creado correctamente",
       vendor,
@@ -47,12 +60,11 @@ export const createVendor = async (req, res) => {
     });
   }
 };
-
 export const getVendors = async (req, res) => {
   try {
     const vendors = await Vendor.find({ is_active: true }).populate(
       "user_id",
-      "name email role"
+      "name email role",
     );
 
     res.json(vendors);
@@ -68,7 +80,7 @@ export const getVendorById = async (req, res) => {
   try {
     const vendor = await Vendor.findById(req.params.id).populate(
       "user_id",
-      "name email role"
+      "name email role",
     );
 
     if (!vendor) {
@@ -120,7 +132,7 @@ export const updateVendor = async (req, res) => {
 
     const populatedVendor = await Vendor.findById(vendor._id).populate(
       "user_id",
-      "name email role"
+      "name email role",
     );
 
     res.json({

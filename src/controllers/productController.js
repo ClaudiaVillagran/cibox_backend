@@ -1,6 +1,9 @@
 import Product from "../models/Product.js";
 import Vendor from "../models/Vendor.js";
 import { normalizeText } from "../utils/normalizeText.js";
+import Favorite from "../models/Favorite.js";
+import Pantry from "../models/Pantry.js";
+import Order from "../models/Order.js";
 
 export const createProduct = async (req, res) => {
   try {
@@ -259,6 +262,228 @@ export const deactivateProduct = async (req, res) => {
   } catch (error) {
     res.status(500).json({
       message: "Error al desactivar producto",
+      error: error.message,
+    });
+  }
+};
+export const getTopRatedProducts = async (req, res) => {
+  try {
+    const { category, limit = 10, minReviews = 1 } = req.query;
+
+    const filters = {
+      is_active: true,
+      reviews_count: { $gte: Number(minReviews) },
+    };
+
+    if (category) {
+      filters["category.id"] = category;
+    }
+
+    const products = await Product.find(filters)
+      .sort({ average_rating: -1, reviews_count: -1, created_at: -1 })
+      .limit(Number(limit));
+
+    res.json(products);
+  } catch (error) {
+    res.status(500).json({
+      message: "Error al obtener productos mejor valorados",
+      error: error.message,
+    });
+  }
+};
+
+export const getFeaturedProducts = async (req, res) => {
+  try {
+    const { category, limit = 10 } = req.query;
+
+    const filters = {
+      is_active: true,
+    };
+
+    if (category) {
+      filters["category.id"] = category;
+    }
+
+    const products = await Product.find(filters)
+      .sort({ reviews_count: -1, average_rating: -1, created_at: -1 })
+      .limit(Number(limit));
+
+    res.json(products);
+  } catch (error) {
+    res.status(500).json({
+      message: "Error al obtener productos destacados",
+      error: error.message,
+    });
+  }
+};
+
+export const getRelatedProducts = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { limit = 8 } = req.query;
+
+    const product = await Product.findById(id);
+
+    if (!product || !product.is_active) {
+      return res.status(404).json({
+        message: "Producto no encontrado o inactivo",
+      });
+    }
+
+    const maxResults = Number(limit);
+
+    let relatedProducts = await Product.find({
+      _id: { $ne: product._id },
+      is_active: true,
+      "category.id": product.category.id,
+    })
+      .sort({ average_rating: -1, reviews_count: -1, created_at: -1 })
+      .limit(maxResults);
+
+    if (relatedProducts.length < maxResults) {
+      const existingIds = relatedProducts.map((p) => p._id.toString());
+
+      const sameVendorProducts = await Product.find({
+        _id: {
+          $ne: product._id,
+          $nin: existingIds,
+        },
+        is_active: true,
+        "vendor.id": product.vendor.id,
+      })
+        .sort({ average_rating: -1, reviews_count: -1, created_at: -1 })
+        .limit(maxResults - relatedProducts.length);
+
+      relatedProducts = [...relatedProducts, ...sameVendorProducts];
+    }
+
+    res.json({
+      base_product: {
+        id: product._id,
+        name: product.name,
+        category: product.category,
+        vendor: product.vendor,
+      },
+      related_products: relatedProducts,
+    });
+  } catch (error) {
+    res.status(500).json({
+      message: "Error al obtener productos relacionados",
+      error: error.message,
+    });
+  }
+};
+
+export const getRecommendedProductsForMe = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { limit = 10 } = req.query;
+
+    const favorites = await Favorite.find({ user_id: userId }).populate("product_id");
+    const pantry = await Pantry.findOne({ user_id: userId });
+    const orders = await Order.find({ user_id: userId });
+
+    const categoryCount = {};
+    const excludedProductIds = new Set();
+
+    for (const favorite of favorites) {
+      const product = favorite.product_id;
+
+      if (product?.category?.id) {
+        categoryCount[product.category.id] = (categoryCount[product.category.id] || 0) + 2;
+      }
+
+      if (product?._id) {
+        excludedProductIds.add(product._id.toString());
+      }
+    }
+
+    if (pantry?.items?.length) {
+      for (const item of pantry.items) {
+        const product = await Product.findById(item.product_id);
+
+        if (product?.category?.id) {
+          categoryCount[product.category.id] = (categoryCount[product.category.id] || 0) + 1;
+        }
+
+        if (product?._id) {
+          excludedProductIds.add(product._id.toString());
+        }
+      }
+    }
+
+    for (const order of orders) {
+      for (const item of order.items) {
+        if (item.product_id) {
+          const product = await Product.findById(item.product_id);
+
+          if (product?.category?.id) {
+            categoryCount[product.category.id] = (categoryCount[product.category.id] || 0) + 3;
+          }
+
+          excludedProductIds.add(item.product_id.toString());
+        }
+      }
+    }
+
+    const sortedCategories = Object.entries(categoryCount)
+      .sort((a, b) => b[1] - a[1])
+      .map(([categoryId]) => categoryId);
+
+    if (!sortedCategories.length) {
+      const fallbackProducts = await Product.find({ is_active: true })
+        .sort({ average_rating: -1, reviews_count: -1, created_at: -1 })
+        .limit(Number(limit));
+
+      return res.json({
+        based_on: "fallback_top_rated",
+        recommended_products: fallbackProducts,
+      });
+    }
+
+    let recommendedProducts = [];
+
+    for (const categoryId of sortedCategories) {
+      const remaining = Number(limit) - recommendedProducts.length;
+
+      if (remaining <= 0) break;
+
+      const products = await Product.find({
+        is_active: true,
+        "category.id": categoryId,
+        _id: { $nin: Array.from(excludedProductIds) },
+      })
+        .sort({ average_rating: -1, reviews_count: -1, created_at: -1 })
+        .limit(remaining);
+
+      for (const product of products) {
+        recommendedProducts.push(product);
+        excludedProductIds.add(product._id.toString());
+      }
+    }
+
+    if (recommendedProducts.length < Number(limit)) {
+      const remaining = Number(limit) - recommendedProducts.length;
+
+      const fallbackProducts = await Product.find({
+        is_active: true,
+        _id: { $nin: Array.from(excludedProductIds) },
+      })
+        .sort({ average_rating: -1, reviews_count: -1, created_at: -1 })
+        .limit(remaining);
+
+      recommendedProducts = [...recommendedProducts, ...fallbackProducts];
+    }
+
+    res.json({
+      based_on: {
+        favorite_categories: sortedCategories,
+      },
+      recommended_products: recommendedProducts,
+    });
+  } catch (error) {
+    res.status(500).json({
+      message: "Error al obtener productos recomendados",
       error: error.message,
     });
   }

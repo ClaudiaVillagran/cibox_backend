@@ -2,6 +2,10 @@ import User from "../models/User.js";
 import Order from "../models/Order.js";
 import Vendor from "../models/Vendor.js";
 import Product from "../models/Product.js";
+import {
+  createNotification,
+  createNotificationsForRole,
+} from "../utils/notification.js";
 
 export const getDashboardStats = async (req, res) => {
   try {
@@ -143,6 +147,7 @@ export const getTopSellingProducts = async (req, res) => {
     });
   }
 };
+
 export const getAllUsers = async (req, res) => {
   try {
     const users = await User.find().select("-password").sort({ created_at: -1 });
@@ -236,6 +241,30 @@ export const updateOrderStatus = async (req, res) => {
       });
     }
 
+    await createNotification({
+      userId: order.user_id,
+      type: "order_status_changed",
+      title: "Actualización de pedido",
+      message: `Tu pedido ${order._id} ahora está en estado: ${order.status}.`,
+      data: {
+        order_id: order._id,
+        status: order.status,
+      },
+    });
+
+    if (status === "cancelled") {
+      await createNotificationsForRole({
+        role: "admin",
+        type: "admin_order_cancelled",
+        title: "Pedido cancelado",
+        message: `La orden ${order._id} fue marcada como cancelada.`,
+        data: {
+          order_id: order._id,
+          user_id: order.user_id,
+        },
+      });
+    }
+
     res.json({
       message: "Estado de la orden actualizado correctamente",
       order,
@@ -278,6 +307,17 @@ export const approveVendor = async (req, res) => {
       });
     }
 
+    await createNotification({
+      userId: vendor.user_id._id || vendor.user_id,
+      type: "vendor_approved",
+      title: "Vendor aprobado",
+      message: `Tu tienda ${vendor.store_name} fue aprobada correctamente.`,
+      data: {
+        vendor_id: vendor._id,
+        store_name: vendor.store_name,
+      },
+    });
+
     res.json({
       message: "Vendor aprobado correctamente",
       vendor,
@@ -315,6 +355,23 @@ export const toggleProductActive = async (req, res) => {
 
     product.is_active = !product.is_active;
     await product.save();
+
+    if (!product.is_active && product.vendor?.id) {
+      const vendor = await Vendor.findById(product.vendor.id);
+
+      if (vendor?.user_id) {
+        await createNotification({
+          userId: vendor.user_id,
+          type: "vendor_product_deactivated",
+          title: "Producto desactivado",
+          message: `Tu producto ${product.name} fue desactivado por un administrador.`,
+          data: {
+            product_id: product._id,
+            product_name: product.name,
+          },
+        });
+      }
+    }
 
     res.json({
       message: "Estado del producto actualizado correctamente",

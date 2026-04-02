@@ -18,7 +18,7 @@ const pricingTierSchema = new mongoose.Schema(
       trim: true,
     },
   },
-  { _id: false }
+  { _id: false },
 );
 
 const productSchema = new mongoose.Schema(
@@ -97,10 +97,21 @@ const productSchema = new mongoose.Schema(
         default: false,
       },
     },
+    average_rating: {
+      type: Number,
+      default: 0,
+      min: 0,
+      max: 5,
+    },
+    reviews_count: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
   },
   {
     timestamps: { createdAt: "created_at", updatedAt: "updated_at" },
-  }
+  },
 );
 
 export default mongoose.model("Product", productSchema);
