@@ -1,81 +1,99 @@
-import mongoose from 'mongoose';
+import mongoose from "mongoose";
 
-const pricingTierSchema = new mongoose.Schema({
-  min_qty: {
-    type: Number,
-    required: true
-  },
-  price: {
-    type: Number,
-    required: true
-  },
-  label: {
-    type: String,
-    required: true
-  }
-}, { _id: false });
-
-const productSchema = new mongoose.Schema({
-  vendor: {
-    id: {
-      type: String,
-      required: true
+const pricingTierSchema = new mongoose.Schema(
+  {
+    min_qty: {
+      type: Number,
+      required: true,
+      min: 1,
     },
+    price: {
+      type: Number,
+      required: true,
+      min: 0,
+    },
+    label: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+  },
+  { _id: false }
+);
+
+const productSchema = new mongoose.Schema(
+  {
+    vendor: {
+      id: {
+        type: String,
+        required: true,
+        trim: true,
+      },
+      name: {
+        type: String,
+        required: true,
+        trim: true,
+      },
+    },
+
     name: {
       type: String,
-      required: true
-    }
-  },
-
-  name: {
-    type: String,
-    required: true,
-    trim: true
-  },
-
-  description: {
-    type: String,
-    required: true,
-    trim: true
-  },
-
-  category: {
-    id: {
-      type: String,
-      required: true
+      required: true,
+      trim: true,
     },
-    name: {
+
+    description: {
       type: String,
-      required: true
-    }
-  },
+      required: true,
+      trim: true,
+    },
 
-  pricing: {
-    tiers: {
-      type: [pricingTierSchema],
-      default: []
-    }
-  },
+    category: {
+      id: {
+        type: String,
+        required: true,
+        trim: true,
+      },
+      name: {
+        type: String,
+        required: true,
+        trim: true,
+      },
+    },
 
-  stock: {
-    type: Number,
-    required: true,
-    default: 0
-  },
+    pricing: {
+      tiers: {
+        type: [pricingTierSchema],
+        default: [],
+        validate: {
+          validator: (value) => Array.isArray(value) && value.length > 0,
+          message: "El producto debe tener al menos un tier de precio",
+        },
+      },
+    },
 
-  is_active: {
-    type: Boolean,
-    default: true
-  },
+    stock: {
+      type: Number,
+      required: true,
+      default: 0,
+      min: 0,
+    },
 
-  cibox_plus: {
-    enabled: {
+    is_active: {
       type: Boolean,
-      default: false
-    }
-  }
-}, {
-  timestamps: { createdAt: 'created_at', updatedAt: 'updated_at' }
-});
+      default: true,
+    },
 
-export default mongoose.model('Product', productSchema);
+    cibox_plus: {
+      enabled: {
+        type: Boolean,
+        default: false,
+      },
+    },
+  },
+  {
+    timestamps: { createdAt: "created_at", updatedAt: "updated_at" },
+  }
+);
+
+export default mongoose.model("Product", productSchema);

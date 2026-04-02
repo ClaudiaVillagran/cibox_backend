@@ -5,7 +5,8 @@ import productRoutes from './routes/productRoutes.js';
 import orderRoutes from './routes/orderRoutes.js';
 import pricingRoutes from './routes/pricingRoutes.js';
 import customBoxRoutes from './routes/customBoxRoutes.js';
-
+import categoryRoutes from "./routes/categoryRoutes.js";
+import vendorRoutes from "./routes/vendorRoutes.js";
 
 
 const app = express();
@@ -23,6 +24,9 @@ app.use('/api/products', productRoutes);
 app.use('/api/orders', orderRoutes);
 app.use('/api/pricing', pricingRoutes);
 app.use('/api/custom-box', customBoxRoutes);
+app.use("/api/categories", categoryRoutes);
+app.use("/api/vendors", vendorRoutes);
+
 
 
 export default app;
