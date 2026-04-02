@@ -42,6 +42,13 @@ const productSchema = new mongoose.Schema(
       trim: true,
     },
 
+    search_name: {
+      type: String,
+      required: true,
+      trim: true,
+      lowercase: true,
+    },
+
     description: {
       type: String,
       required: true,

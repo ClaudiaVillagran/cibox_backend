@@ -1,5 +1,6 @@
 import Product from "../models/Product.js";
 import Vendor from "../models/Vendor.js";
+import { normalizeText } from "../utils/normalizeText.js";
 
 export const createProduct = async (req, res) => {
   try {
@@ -7,17 +8,17 @@ export const createProduct = async (req, res) => {
     let vendorData = null;
 
     if (req.user.role === "admin") {
-      const { vendor } = req.body;
+      const { vendor: vendorBody } = req.body;
 
-      if (!vendor?.id || !vendor?.name) {
+      if (!vendorBody?.id || !vendorBody?.name) {
         return res.status(400).json({
           message: "Admin debe enviar vendor.id y vendor.name",
         });
       }
 
       vendorData = {
-        id: vendor.id,
-        name: vendor.name,
+        id: vendorBody.id,
+        name: vendorBody.name,
       };
     } else {
       const vendor = await Vendor.findOne({ user_id: userId });
@@ -48,6 +49,7 @@ export const createProduct = async (req, res) => {
 
     const product = await Product.create({
       ...req.body,
+      search_name: normalizeText(req.body.name),
       vendor: vendorData,
     });
 
@@ -65,7 +67,65 @@ export const createProduct = async (req, res) => {
 
 export const getProducts = async (req, res) => {
   try {
-    const products = await Product.find({ is_active: true });
+    const { category, vendor, search, minPrice, maxPrice, sort } = req.query;
+
+    const filters = {
+      is_active: true,
+    };
+
+    if (category) {
+      filters["category.id"] = category;
+    }
+
+    if (vendor) {
+      filters["vendor.id"] = vendor;
+    }
+
+    if (search) {
+      const normalizedSearch = normalizeText(search);
+      filters.search_name = { $regex: normalizedSearch, $options: "i" };
+    }
+
+    let products = await Product.find(filters);
+
+    if (minPrice || maxPrice) {
+      products = products.filter((product) => {
+        const tiers = product.pricing?.tiers || [];
+
+        if (!tiers.length) return false;
+
+        const lowestPrice = Math.min(...tiers.map((tier) => tier.price));
+
+        if (minPrice && lowestPrice < Number(minPrice)) return false;
+        if (maxPrice && lowestPrice > Number(maxPrice)) return false;
+
+        return true;
+      });
+    }
+
+    if (sort === "price_asc") {
+      products.sort((a, b) => {
+        const aPrice = Math.min(...a.pricing.tiers.map((tier) => tier.price));
+        const bPrice = Math.min(...b.pricing.tiers.map((tier) => tier.price));
+        return aPrice - bPrice;
+      });
+    }
+
+    if (sort === "price_desc") {
+      products.sort((a, b) => {
+        const aPrice = Math.min(...a.pricing.tiers.map((tier) => tier.price));
+        const bPrice = Math.min(...b.pricing.tiers.map((tier) => tier.price));
+        return bPrice - aPrice;
+      });
+    }
+
+    if (sort === "newest") {
+      products.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+    }
+
+    if (sort === "oldest") {
+      products.sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+    }
 
     res.json(products);
   } catch (error) {
@@ -118,11 +178,14 @@ export const updateProduct = async (req, res) => {
 
     const updateData = { ...req.body };
     delete updateData.vendor;
+    if (updateData.name) {
+      updateData.search_name = normalizeText(updateData.name);
+    }
 
     const updatedProduct = await Product.findByIdAndUpdate(
       req.params.id,
       updateData,
-      { new: true, runValidators: true }
+      { new: true, runValidators: true },
     );
 
     res.json({
