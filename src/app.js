@@ -8,6 +8,7 @@ import customBoxRoutes from './routes/customBoxRoutes.js';
 import categoryRoutes from "./routes/categoryRoutes.js";
 import vendorRoutes from "./routes/vendorRoutes.js";
 import pantryRoutes from "./routes/pantryRoutes.js";
+import adminRoutes from "./routes/adminRoutes.js";
 
 const app = express();
 
@@ -27,6 +28,6 @@ app.use('/api/custom-box', customBoxRoutes);
 app.use("/api/categories", categoryRoutes);
 app.use("/api/vendors", vendorRoutes);
 app.use("/api/pantry", pantryRoutes);
-
+app.use("/api/admin", adminRoutes);
 
 export default app;

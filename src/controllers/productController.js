@@ -67,7 +67,16 @@ export const createProduct = async (req, res) => {
 
 export const getProducts = async (req, res) => {
   try {
-    const { category, vendor, search, minPrice, maxPrice, sort } = req.query;
+    const {
+      category,
+      vendor,
+      search,
+      minPrice,
+      maxPrice,
+      sort,
+      page = 1,
+      limit = 10,
+    } = req.query;
 
     const filters = {
       is_active: true,
@@ -91,7 +100,6 @@ export const getProducts = async (req, res) => {
     if (minPrice || maxPrice) {
       products = products.filter((product) => {
         const tiers = product.pricing?.tiers || [];
-
         if (!tiers.length) return false;
 
         const lowestPrice = Math.min(...tiers.map((tier) => tier.price));
@@ -127,7 +135,27 @@ export const getProducts = async (req, res) => {
       products.sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
     }
 
-    res.json(products);
+    const pageNumber = Math.max(Number(page), 1);
+    const limitNumber = Math.max(Number(limit), 1);
+
+    const totalItems = products.length;
+    const totalPages = Math.ceil(totalItems / limitNumber);
+    const startIndex = (pageNumber - 1) * limitNumber;
+    const endIndex = startIndex + limitNumber;
+
+    const paginatedProducts = products.slice(startIndex, endIndex);
+
+    res.json({
+      data: paginatedProducts,
+      pagination: {
+        page: pageNumber,
+        limit: limitNumber,
+        totalItems,
+        totalPages,
+        hasNextPage: pageNumber < totalPages,
+        hasPrevPage: pageNumber > 1,
+      },
+    });
   } catch (error) {
     res.status(500).json({
       message: "Error al obtener productos",
