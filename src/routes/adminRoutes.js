@@ -4,10 +4,13 @@ import {
   getAllOrders,
   getAllProductsAdmin,
   getAllUsers,
+  getDashboardStats,
   getPendingVendors,
+  getSalesSummary,
   toggleProductActive,
   updateOrderStatus,
   updateUserRole,
+  getTopSellingProducts,
 } from "../controllers/adminController.js";
 import { protect } from "../middlewares/authMiddleware.js";
 import { authorize } from "../middlewares/roleMiddleware.js";
@@ -27,5 +30,8 @@ router.patch("/vendors/:id/approve", approveVendor);
 
 router.get("/products", getAllProductsAdmin);
 router.patch("/products/:id/toggle-active", toggleProductActive);
+router.get("/dashboard", getDashboardStats);
+router.get("/dashboard/sales-summary", getSalesSummary);
+router.get("/dashboard/top-products", getTopSellingProducts);
 
 export default router;

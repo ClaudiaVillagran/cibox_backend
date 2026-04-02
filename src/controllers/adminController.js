@@ -3,6 +3,146 @@ import Order from "../models/Order.js";
 import Vendor from "../models/Vendor.js";
 import Product from "../models/Product.js";
 
+export const getDashboardStats = async (req, res) => {
+  try {
+    const [
+      totalUsers,
+      totalVendors,
+      pendingVendors,
+      totalProducts,
+      activeProducts,
+      inactiveProducts,
+      totalOrders,
+      recentUsers,
+      recentOrders,
+      ordersByStatusRaw,
+      salesAgg,
+    ] = await Promise.all([
+      User.countDocuments(),
+      Vendor.countDocuments(),
+      Vendor.countDocuments({ approved: false, is_active: true }),
+      Product.countDocuments(),
+      Product.countDocuments({ is_active: true }),
+      Product.countDocuments({ is_active: false }),
+      Order.countDocuments(),
+      User.find().select("-password").sort({ created_at: -1 }).limit(5),
+      Order.find()
+        .populate("user_id", "name email")
+        .sort({ created_at: -1 })
+        .limit(5),
+      Order.aggregate([
+        {
+          $group: {
+            _id: "$status",
+            count: { $sum: 1 },
+          },
+        },
+      ]),
+      Order.aggregate([
+        {
+          $group: {
+            _id: null,
+            totalSales: { $sum: "$total" },
+          },
+        },
+      ]),
+    ]);
+
+    const ordersByStatus = {
+      pending: 0,
+      paid: 0,
+      preparing: 0,
+      shipped: 0,
+      delivered: 0,
+      cancelled: 0,
+    };
+
+    for (const item of ordersByStatusRaw) {
+      ordersByStatus[item._id] = item.count;
+    }
+
+    const totalSales = salesAgg.length ? salesAgg[0].totalSales : 0;
+
+    res.json({
+      stats: {
+        users: totalUsers,
+        vendors: totalVendors,
+        pending_vendors: pendingVendors,
+        products: totalProducts,
+        active_products: activeProducts,
+        inactive_products: inactiveProducts,
+        orders: totalOrders,
+        total_sales: totalSales,
+        orders_by_status: ordersByStatus,
+      },
+      recent_users: recentUsers,
+      recent_orders: recentOrders,
+    });
+  } catch (error) {
+    res.status(500).json({
+      message: "Error al obtener dashboard",
+      error: error.message,
+    });
+  }
+};
+
+export const getSalesSummary = async (req, res) => {
+  try {
+    const { from, to } = req.query;
+
+    const dateFilter = {};
+
+    if (from || to) {
+      dateFilter.created_at = {};
+      if (from) dateFilter.created_at.$gte = new Date(from);
+      if (to) dateFilter.created_at.$lte = new Date(to);
+    }
+
+    const orders = await Order.find(dateFilter);
+
+    const totalOrders = orders.length;
+    const totalSales = orders.reduce((acc, order) => acc + order.total, 0);
+    const averageTicket = totalOrders > 0 ? totalSales / totalOrders : 0;
+
+    res.json({
+      summary: {
+        total_orders: totalOrders,
+        total_sales: totalSales,
+        average_ticket: Math.round(averageTicket),
+      },
+    });
+  } catch (error) {
+    res.status(500).json({
+      message: "Error al obtener resumen de ventas",
+      error: error.message,
+    });
+  }
+};
+
+export const getTopSellingProducts = async (req, res) => {
+  try {
+    const topProducts = await Order.aggregate([
+      { $unwind: "$items" },
+      {
+        $group: {
+          _id: "$items.product_id",
+          name: { $first: "$items.name" },
+          total_quantity: { $sum: "$items.quantity" },
+          total_revenue: { $sum: "$items.subtotal" },
+        },
+      },
+      { $sort: { total_quantity: -1 } },
+      { $limit: 10 },
+    ]);
+
+    res.json(topProducts);
+  } catch (error) {
+    res.status(500).json({
+      message: "Error al obtener top de productos",
+      error: error.message,
+    });
+  }
+};
 export const getAllUsers = async (req, res) => {
   try {
     const users = await User.find().select("-password").sort({ created_at: -1 });
