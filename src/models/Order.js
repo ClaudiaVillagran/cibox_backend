@@ -135,6 +135,18 @@ const orderSchema = new mongoose.Schema(
         trim: true,
       },
     },
+
+    coupon: {
+      code: {
+        type: String,
+        default: null,
+      },
+      discount_amount: {
+        type: Number,
+        default: 0,
+        min: 0,
+      },
+    },
   },
   {
     timestamps: { createdAt: "created_at", updatedAt: "updated_at" },

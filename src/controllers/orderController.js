@@ -1,11 +1,17 @@
 import CustomBox from "../models/CustomBox.js";
 import Order from "../models/Order.js";
 import Product from "../models/Product.js";
+import Coupon from "../models/Coupon.js";
+import CouponUsage from "../models/CouponUsage.js";
+import {
+  calculateCouponDiscount,
+  validateCouponForUser,
+} from "../utils/coupon.js";
 
 export const createOrderFromCustomBox = async (req, res) => {
   try {
     const userId = req.user.id;
-    const { shipping, payment } = req.body;
+    const { shipping, payment, couponCode } = req.body;
 
     if (!shipping?.region || !shipping?.city || !shipping?.address) {
       return res.status(400).json({
@@ -31,7 +37,32 @@ export const createOrderFromCustomBox = async (req, res) => {
     }
 
     const orderItems = [];
+    const subtotalBeforeCoupon = customBox.total;
+    let coupon = null;
+    let couponDiscount = 0;
 
+    if (couponCode) {
+      coupon = await Coupon.findOne({
+        code: couponCode.toUpperCase(),
+      });
+
+      const validation = await validateCouponForUser({
+        coupon,
+        userId,
+        subtotal: subtotalBeforeCoupon,
+      });
+
+      if (!validation.valid) {
+        return res.status(400).json({
+          message: validation.message,
+        });
+      }
+
+      couponDiscount = calculateCouponDiscount({
+        coupon,
+        subtotal: subtotalBeforeCoupon,
+      });
+    }
     for (const item of customBox.items) {
       const product = await Product.findById(item.product_id);
 
@@ -80,7 +111,7 @@ export const createOrderFromCustomBox = async (req, res) => {
     const order = await Order.create({
       user_id: userId,
       items: orderItems,
-      total: customBox.total,
+      total: subtotalBeforeCoupon - couponDiscount,
       status: "pending",
       source: "custom_box",
       payment: {
@@ -89,8 +120,29 @@ export const createOrderFromCustomBox = async (req, res) => {
         transaction_id: payment?.transaction_id || null,
       },
       shipping,
+      coupon: coupon
+        ? {
+            code: coupon.code,
+            discount_amount: couponDiscount,
+          }
+        : {
+            code: null,
+            discount_amount: 0,
+          },
     });
 
+    if (coupon && couponDiscount > 0) {
+      coupon.used_count += 1;
+      await coupon.save();
+
+      await CouponUsage.create({
+        coupon_id: coupon._id,
+        user_id: userId,
+        order_id: order._id,
+        code: coupon.code,
+        discount_amount: couponDiscount,
+      });
+    }
     customBox.status = "confirmed";
     await customBox.save();
     const existingDraft = await CustomBox.findOne({
@@ -111,15 +163,16 @@ export const createOrderFromCustomBox = async (req, res) => {
       0,
     );
 
-    const totalDiscount = totalOriginal - customBox.total;
+    const totalDiscountFromItems = totalOriginal - customBox.total;
 
     res.status(201).json({
       message: "Orden creada correctamente desde la caja personalizada",
       order,
       summary: {
         total_original: totalOriginal,
-        total_final: customBox.total,
-        total_discount: totalDiscount,
+        total_items_discount: totalDiscountFromItems,
+        coupon_discount: couponDiscount,
+        total_final: subtotalBeforeCoupon - couponDiscount,
       },
     });
   } catch (error) {
