@@ -1,9 +1,10 @@
 import Product from '../models/Product.js';
+import User from '../models/User.js';
 import { calculateItemPricing } from '../utils/pricing.js';
 
 export const calculateProductPrice = async (req, res) => {
   try {
-    const { productId, quantity } = req.body;
+    const { productId, quantity, userId } = req.body;
 
     if (!productId || !quantity) {
       return res.status(400).json({
@@ -19,13 +20,25 @@ export const calculateProductPrice = async (req, res) => {
       });
     }
 
-    const pricing = calculateItemPricing(product.pricing.tiers, Number(quantity));
+    let user = null;
+
+    if (userId) {
+      user = await User.findById(userId);
+    }
+
+    const pricing = calculateItemPricing({
+      tiers: product.pricing.tiers,
+      quantity: Number(quantity),
+      product,
+      user
+    });
 
     res.json({
       message: 'Precio calculado correctamente',
       product: {
         id: product._id,
-        name: product.name
+        name: product.name,
+        cibox_plus_enabled: product.cibox_plus?.enabled || false
       },
       pricing
     });
