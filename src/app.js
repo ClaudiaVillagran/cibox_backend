@@ -11,7 +11,7 @@ import pantryRoutes from "./routes/pantryRoutes.js";
 import adminRoutes from "./routes/adminRoutes.js";
 import couponRoutes from "./routes/couponRoutes.js";
 import vendorDashboardRoutes from "./routes/vendorDashboardRoutes.js";
-
+import favoriteRoutes from "./routes/favoriteRoutes.js";
 
 const app = express();
 
@@ -34,5 +34,8 @@ app.use("/api/pantry", pantryRoutes);
 app.use("/api/admin", adminRoutes);
 app.use("/api/coupons", couponRoutes);
 app.use("/api/vendor/dashboard", vendorDashboardRoutes);
+app.use("/api/favorites", favoriteRoutes);
+
+
 
 export default app;
