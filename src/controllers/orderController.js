@@ -17,6 +17,7 @@ export const createOrderFromCustomBox = async (req, res) => {
   try {
     const userId = req.user.id;
     const { shipping, payment, couponCode } = req.body;
+    console.log(req.body);
 
     if (!shipping?.region || !shipping?.city || !shipping?.address) {
       return res.status(400).json({
@@ -106,24 +107,24 @@ export const createOrderFromCustomBox = async (req, res) => {
       });
     }
 
-    for (const item of customBox.items) {
-      await Product.findByIdAndUpdate(
-        item.product_id,
-        { $inc: { stock: -item.quantity } },
-        { new: true }
-      );
-    }
-
     const order = await Order.create({
       user_id: userId,
+      custom_box_id: customBox._id,
       items: orderItems,
       total: subtotalBeforeCoupon - couponDiscount,
       status: "pending",
       source: "custom_box",
       payment: {
         method: payment?.method || "webpay",
-        status: payment?.status || "pending",
-        transaction_id: payment?.transaction_id || null,
+        status: "pending",
+        transaction_id: null,
+        token: null,
+        buy_order: null,
+        session_id: null,
+        amount: subtotalBeforeCoupon - couponDiscount,
+        authorization_code: null,
+        response_code: null,
+        transaction_date: null,
       },
       shipping,
       coupon: coupon
@@ -137,95 +138,15 @@ export const createOrderFromCustomBox = async (req, res) => {
           },
     });
 
-    await createNotification({
-      userId,
-      type: "order_created",
-      title: "Tu pedido fue creado",
-      message: `Tu pedido fue creado por un total de $${order.total}.`,
-      data: {
-        order_id: order._id,
-        total: order.total,
-      },
-    });
-
-    await createNotificationsForRole({
-      role: "admin",
-      type: "admin_new_order",
-      title: "Nueva compra realizada",
-      message: `Se creó una nueva orden por $${order.total}.`,
-      data: {
-        order_id: order._id,
-        user_id: userId,
-        total: order.total,
-        source: order.source,
-      },
-    });
-
-    const notifiedVendorIds = new Set();
-
-    for (const item of orderItems) {
-      const product = await Product.findById(item.product_id);
-
-      if (!product?.vendor?.id) continue;
-      if (notifiedVendorIds.has(product.vendor.id)) continue;
-
-      const vendor = await Vendor.findById(product.vendor.id);
-
-      if (vendor?.user_id) {
-        await createNotification({
-          userId: vendor.user_id,
-          type: "vendor_new_order",
-          title: "Recibiste un nuevo pedido",
-          message: `Uno o más de tus productos fueron comprados en la orden ${order._id}.`,
-          data: {
-            order_id: order._id,
-            vendor_id: vendor._id,
-          },
-        });
-
-        notifiedVendorIds.add(product.vendor.id);
-      }
-    }
-
-    if (coupon && couponDiscount > 0) {
-      coupon.used_count += 1;
-      await coupon.save();
-
-      await CouponUsage.create({
-        coupon_id: coupon._id,
-        user_id: userId,
-        order_id: order._id,
-        code: coupon.code,
-        discount_amount: couponDiscount,
-      });
-    }
-
-    customBox.status = "confirmed";
-    await customBox.save();
-
-    const existingDraft = await CustomBox.findOne({
-      user_id: userId,
-      status: "draft",
-    });
-
-    if (!existingDraft) {
-      await CustomBox.create({
-        user_id: userId,
-        status: "draft",
-        items: [],
-        total: 0,
-      });
-    }
-
     const totalOriginal = customBox.items.reduce(
       (acc, item) => acc + (item.original_subtotal || item.subtotal),
-      0
+      0,
     );
 
     const totalDiscountFromItems = totalOriginal - customBox.total;
 
     res.status(201).json({
-      message: "Orden creada correctamente desde la caja personalizada",
+      message: "Orden pendiente de pago creada correctamente",
       order,
       summary: {
         total_original: totalOriginal,
@@ -237,6 +158,32 @@ export const createOrderFromCustomBox = async (req, res) => {
   } catch (error) {
     res.status(500).json({
       message: "Error al crear la orden",
+      error: error.message,
+    });
+  }
+};
+export const getMyProducts = async (req, res) => {
+  try {
+    if (req.user.role === "admin") {
+      return res
+        .status(400)
+        .json({ message: "Admin debe usar filtros normales" });
+    }
+
+    const vendor = await Vendor.findOne({ user_id: req.user.id });
+    console.log(vendor);
+    if (!vendor) {
+      return res.status(404).json({ message: "Vendor no encontrado" });
+    }
+
+    const products = await Product.find({
+      "vendor.id": vendor._id.toString(),
+    }).sort({ created_at: -1 });
+
+    res.json(products);
+  } catch (error) {
+    res.status(500).json({
+      message: "Error al obtener mis productos",
       error: error.message,
     });
   }

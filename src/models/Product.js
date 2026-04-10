@@ -41,6 +41,14 @@ const productSchema = new mongoose.Schema(
       required: true,
       trim: true,
     },
+    images: {
+      type: [String],
+      default: [],
+    },
+    thumbnail: {
+      type: String,
+      default: "",
+    },
 
     search_name: {
       type: String,
@@ -107,6 +115,53 @@ const productSchema = new mongoose.Schema(
       type: Number,
       default: 0,
       min: 0,
+    },
+    sku: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+
+    brand: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+
+    weight: {
+      value: {
+        type: Number,
+        min: 0,
+        default: 0,
+      },
+      unit: {
+        type: String,
+        trim: true,
+        default: "g",
+      },
+    },
+
+    dimensions: {
+      length: {
+        type: Number,
+        min: 0,
+        default: 0,
+      },
+      width: {
+        type: Number,
+        min: 0,
+        default: 0,
+      },
+      height: {
+        type: Number,
+        min: 0,
+        default: 0,
+      },
+      unit: {
+        type: String,
+        trim: true,
+        default: "cm",
+      },
     },
   },
   {

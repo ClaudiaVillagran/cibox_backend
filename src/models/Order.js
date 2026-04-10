@@ -61,7 +61,7 @@ const orderItemSchema = new mongoose.Schema(
       min: 0,
     },
   },
-  { _id: false }
+  { _id: false },
 );
 
 const orderSchema = new mongoose.Schema(
@@ -107,34 +107,93 @@ const orderSchema = new mongoose.Schema(
         type: String,
         default: "webpay",
       },
+      platform: {
+        type: String,
+        enum: ["ios", "android", "web"],
+        default: "web",
+      },
       status: {
         type: String,
-        enum: ["pending", "approved", "rejected"],
+        enum: ["pending", "approved", "rejected", "cancelled"],
         default: "pending",
       },
       transaction_id: {
         type: String,
         default: null,
       },
+      token: {
+        type: String,
+        default: null,
+      },
+      buy_order: {
+        type: String,
+        default: null,
+      },
+      session_id: {
+        type: String,
+        default: null,
+      },
+      amount: {
+        type: Number,
+        default: 0,
+        min: 0,
+      },
+      authorization_code: {
+        type: String,
+        default: null,
+      },
+      response_code: {
+        type: Number,
+        default: null,
+      },
+      transaction_date: {
+        type: Date,
+        default: null,
+      },
     },
 
     shipping: {
-      region: {
-        type: String,
-        required: true,
-        trim: true,
-      },
-      city: {
-        type: String,
-        required: true,
-        trim: true,
-      },
-      address: {
-        type: String,
-        required: true,
-        trim: true,
-      },
-    },
+  region: {
+    type: String,
+    required: true,
+    trim: true,
+  },
+  city: {
+    type: String,
+    required: true,
+    trim: true,
+  },
+  address: {
+    type: String,
+    required: true,
+    trim: true,
+  },
+  amount: {
+    type: Number,
+    default: 0,
+    min: 0,
+  },
+  carrier: {
+    type: String,
+    default: "blueexpress",
+  },
+  service_name: {
+    type: String,
+    default: null,
+  },
+  tracking_number: {
+    type: String,
+    default: null,
+  },
+  shipment_status: {
+    type: String,
+    default: null,
+  },
+  label_url: {
+    type: String,
+    default: null,
+  },
+},
 
     coupon: {
       code: {
@@ -150,7 +209,7 @@ const orderSchema = new mongoose.Schema(
   },
   {
     timestamps: { createdAt: "created_at", updatedAt: "updated_at" },
-  }
+  },
 );
 
 export default mongoose.model("Order", orderSchema);

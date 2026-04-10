@@ -15,6 +15,7 @@ export const getOrCreateCustomBox = async (req, res) => {
       user_id: userId,
       status: "draft",
     });
+    console.log(customBox);
 
     if (!customBox) {
       customBox = await CustomBox.create({
@@ -69,12 +70,13 @@ export const addItemToCustomBox = async (req, res) => {
     }
 
     const existingItemIndex = customBox.items.findIndex(
-      (item) => item.product_id.toString() === productId
+      (item) => item.product_id.toString() === productId,
     );
 
     if (existingItemIndex >= 0) {
       customBox.items[existingItemIndex].quantity += Number(quantity);
-
+      customBox.items[existingItemIndex].thumbnail =
+        product.thumbnail || product.images?.[0] || "";
       const updatedQuantity = customBox.items[existingItemIndex].quantity;
 
       const pricing = calculateItemPricing({
@@ -85,14 +87,20 @@ export const addItemToCustomBox = async (req, res) => {
       });
 
       customBox.items[existingItemIndex].unit_price = pricing.unit_price;
-      customBox.items[existingItemIndex].original_unit_price = pricing.original_unit_price;
+      customBox.items[existingItemIndex].original_unit_price =
+        pricing.original_unit_price;
       customBox.items[existingItemIndex].tier_label = pricing.tier_label;
-      customBox.items[existingItemIndex].discount_applied = pricing.discount_applied;
-      customBox.items[existingItemIndex].discount_percent = pricing.discount_percent;
-      customBox.items[existingItemIndex].discount_amount_per_unit = pricing.discount_amount_per_unit;
-      customBox.items[existingItemIndex].discount_source = pricing.discount_source;
+      customBox.items[existingItemIndex].discount_applied =
+        pricing.discount_applied;
+      customBox.items[existingItemIndex].discount_percent =
+        pricing.discount_percent;
+      customBox.items[existingItemIndex].discount_amount_per_unit =
+        pricing.discount_amount_per_unit;
+      customBox.items[existingItemIndex].discount_source =
+        pricing.discount_source;
       customBox.items[existingItemIndex].subtotal = pricing.subtotal;
-      customBox.items[existingItemIndex].original_subtotal = pricing.original_subtotal;
+      customBox.items[existingItemIndex].original_subtotal =
+        pricing.original_subtotal;
     } else {
       const pricing = calculateItemPricing({
         tiers: product.pricing.tiers,
@@ -104,6 +112,7 @@ export const addItemToCustomBox = async (req, res) => {
       customBox.items.push({
         product_id: product._id,
         name: product.name,
+        thumbnail: product.thumbnail || product.images?.[0] || "",
         quantity: Number(quantity),
         unit_price: pricing.unit_price,
         original_unit_price: pricing.original_unit_price,
@@ -159,7 +168,7 @@ export const updateCustomBoxItem = async (req, res) => {
     }
 
     const itemIndex = customBox.items.findIndex(
-      (item) => item.product_id.toString() === productId
+      (item) => item.product_id.toString() === productId,
     );
 
     if (itemIndex < 0) {
@@ -185,11 +194,13 @@ export const updateCustomBoxItem = async (req, res) => {
 
     customBox.items[itemIndex].quantity = Number(quantity);
     customBox.items[itemIndex].unit_price = pricing.unit_price;
-    customBox.items[itemIndex].original_unit_price = pricing.original_unit_price;
+    customBox.items[itemIndex].original_unit_price =
+      pricing.original_unit_price;
     customBox.items[itemIndex].tier_label = pricing.tier_label;
     customBox.items[itemIndex].discount_applied = pricing.discount_applied;
     customBox.items[itemIndex].discount_percent = pricing.discount_percent;
-    customBox.items[itemIndex].discount_amount_per_unit = pricing.discount_amount_per_unit;
+    customBox.items[itemIndex].discount_amount_per_unit =
+      pricing.discount_amount_per_unit;
     customBox.items[itemIndex].discount_source = pricing.discount_source;
     customBox.items[itemIndex].subtotal = pricing.subtotal;
     customBox.items[itemIndex].original_subtotal = pricing.original_subtotal;
@@ -227,7 +238,7 @@ export const removeItemFromCustomBox = async (req, res) => {
     }
 
     customBox.items = customBox.items.filter(
-      (item) => item.product_id.toString() !== productId
+      (item) => item.product_id.toString() !== productId,
     );
 
     customBox.total = recalculateBoxTotal(customBox.items);

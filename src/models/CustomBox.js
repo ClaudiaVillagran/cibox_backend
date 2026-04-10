@@ -59,8 +59,12 @@ const customBoxItemSchema = new mongoose.Schema(
       type: Number,
       min: 0,
     },
+     thumbnail: {
+      type: String,
+      default: "",
+    },
   },
-  { _id: false }
+  { _id: false },
 );
 
 const customBoxSchema = new mongoose.Schema(
@@ -84,10 +88,11 @@ const customBoxSchema = new mongoose.Schema(
       default: 0,
       min: 0,
     },
+   
   },
   {
     timestamps: { createdAt: "created_at", updatedAt: "updated_at" },
-  }
+  },
 );
 
 export default mongoose.model("CustomBox", customBoxSchema);

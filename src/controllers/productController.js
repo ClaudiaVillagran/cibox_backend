@@ -192,6 +192,7 @@ export const updateProduct = async (req, res) => {
     const vendor = await Vendor.findOne({ user_id: userId });
     const product = await Product.findById(req.params.id);
 
+    console.log(product);
     if (!product) {
       return res.status(404).json({
         message: "Producto no encontrado",
@@ -484,6 +485,87 @@ export const getRecommendedProductsForMe = async (req, res) => {
   } catch (error) {
     res.status(500).json({
       message: "Error al obtener productos recomendados",
+      error: error.message,
+    });
+  }
+};
+
+export const reactivateProduct = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const vendor = await Vendor.findOne({ user_id: userId });
+    const product = await Product.findById(req.params.id);
+
+    if (!product) {
+      return res.status(404).json({
+        message: "Producto no encontrado",
+      });
+    }
+
+    if (
+      req.user.role !== "admin" &&
+      (!vendor || product.vendor.id.toString() !== vendor._id.toString())
+    ) {
+      return res.status(403).json({
+        message: "No puedes reactivar este producto",
+      });
+    }
+
+    product.is_active = true;
+    await product.save();
+
+    res.json({
+      message: "Producto reactivado correctamente",
+      product,
+    });
+  } catch (error) {
+    res.status(500).json({
+      message: "Error al reactivar producto",
+      error: error.message,
+    });
+  }
+};
+export const updateProductStock = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { stock } = req.body;
+
+    const vendor = await Vendor.findOne({ user_id: userId });
+    const product = await Product.findById(req.params.id);
+
+    if (!product) {
+      return res.status(404).json({
+        message: "Producto no encontrado",
+      });
+    }
+
+    if (
+      req.user.role !== "admin" &&
+      (!vendor || String(product.vendor?.id) !== String(vendor._id))
+    ) {
+      return res.status(403).json({
+        message: "No puedes editar el stock de este producto",
+      });
+    }
+
+    const stockNumber = Number(stock);
+
+    if (Number.isNaN(stockNumber) || stockNumber < 0) {
+      return res.status(400).json({
+        message: "El stock debe ser un número mayor o igual a 0",
+      });
+    }
+
+    product.stock = stockNumber;
+    await product.save();
+
+    res.json({
+      message: "Stock actualizado correctamente",
+      product,
+    });
+  } catch (error) {
+    res.status(500).json({
+      message: "Error al actualizar stock",
       error: error.message,
     });
   }
