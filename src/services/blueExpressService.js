@@ -48,8 +48,9 @@ export const buildPackagesFromOrder = (order) => {
 
     const grams = toGrams(product.weight);
     const dims = toCentimeters(product.dimensions);
+    const quantity = Number(item.quantity || 0);
 
-    for (let i = 0; i < Number(item.quantity || 0); i += 1) {
+    for (let i = 0; i < quantity; i += 1) {
       packages.push({
         weight: grams,
         length: dims.length,
@@ -65,7 +66,48 @@ export const buildPackagesFromOrder = (order) => {
   return packages;
 };
 
-// Ajusta estos endpoints cuando Blue te entregue la doc exacta
+export const validatePackages = (packages = []) => {
+  if (!packages.length) {
+    return "No se pudieron construir los paquetes";
+  }
+
+  const hasInvalidPackage = packages.some(
+    (p) => !p.weight || !p.length || !p.width || !p.height
+  );
+
+  if (hasInvalidPackage) {
+    return "Hay productos sin peso o dimensiones válidas";
+  }
+
+  return null;
+};
+
+export const buildQuotePayloadFromOrder = (order) => {
+  const packages = buildPackagesFromOrder(order);
+
+  return {
+    origin: {
+      region: process.env.BLUE_ORIGIN_REGION,
+      city: process.env.BLUE_ORIGIN_CITY,
+      address: process.env.BLUE_ORIGIN_ADDRESS,
+      name: process.env.BLUE_ORIGIN_NAME,
+      phone: process.env.BLUE_ORIGIN_PHONE,
+    },
+    destination: {
+      fullName: order.customer?.fullName || "Cliente CIBOX",
+      email: order.customer?.email || null,
+      phone: order.customer?.phone || null,
+      region: order.shipping?.region,
+      city: order.shipping?.city,
+      address: order.shipping?.address,
+      addressLine2: order.shipping?.addressLine2 || null,
+      reference: order.shipping?.reference || null,
+    },
+    packages,
+  };
+};
+
+// OJO: AJUSTA estos endpoints cuando Blue te entregue la doc real
 export const quoteBlueShipment = async (payload) => {
   const { data } = await blueClient.post("/quotes", payload);
   return data;

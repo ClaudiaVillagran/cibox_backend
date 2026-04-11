@@ -100,17 +100,18 @@ export const createReview = async (req, res) => {
       }
     }
 
-    res.status(201).json({
+    return res.status(201).json({
       message: "Reseña creada correctamente",
       review,
     });
   } catch (error) {
-    res.status(500).json({
+    return res.status(500).json({
       message: "Error al crear reseña",
       error: error.message,
     });
   }
 };
+
 export const getProductReviews = async (req, res) => {
   try {
     const { productId } = req.params;
@@ -119,9 +120,9 @@ export const getProductReviews = async (req, res) => {
       .populate("user_id", "name email")
       .sort({ created_at: -1 });
 
-    res.json(reviews);
+    return res.json(reviews);
   } catch (error) {
-    res.status(500).json({
+    return res.status(500).json({
       message: "Error al obtener reseñas",
       error: error.message,
     });
@@ -151,12 +152,12 @@ export const updateMyReview = async (req, res) => {
     await review.save();
     await updateProductRatingStats(productId);
 
-    res.json({
+    return res.json({
       message: "Reseña actualizada correctamente",
       review,
     });
   } catch (error) {
-    res.status(500).json({
+    return res.status(500).json({
       message: "Error al actualizar reseña",
       error: error.message,
     });
@@ -181,11 +182,11 @@ export const deleteMyReview = async (req, res) => {
 
     await updateProductRatingStats(productId);
 
-    res.json({
+    return res.json({
       message: "Reseña eliminada correctamente",
     });
   } catch (error) {
-    res.status(500).json({
+    return res.status(500).json({
       message: "Error al eliminar reseña",
       error: error.message,
     });
@@ -194,20 +195,27 @@ export const deleteMyReview = async (req, res) => {
 
 export const getMyReviewForProduct = async (req, res) => {
   try {
-    const userId = req.user.id;
+    const userId = req.user?.id;
     const { productId } = req.params;
+
+    if (!userId) {
+      return res.json({
+        has_review: false,
+        review: null,
+      });
+    }
 
     const review = await Review.findOne({
       user_id: userId,
       product_id: productId,
     });
 
-    res.json({
+    return res.json({
       has_review: !!review,
       review: review || null,
     });
   } catch (error) {
-    res.status(500).json({
+    return res.status(500).json({
       message: "Error al obtener tu reseña",
       error: error.message,
     });

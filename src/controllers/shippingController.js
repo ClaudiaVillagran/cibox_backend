@@ -1,7 +1,9 @@
 import Order from "../models/Order.js";
 import {
-  buildPackagesFromOrder,
+  buildQuotePayloadFromOrder,
+  validatePackages,
   quoteBlueShipment,
+  createBlueShipment,
 } from "../services/blueExpressService.js";
 
 export const quoteShipping = async (req, res) => {
@@ -22,39 +24,12 @@ export const quoteShipping = async (req, res) => {
       return res.status(403).json({ message: "No autorizado" });
     }
 
-    const packages = buildPackagesFromOrder(order);
+    const payload = buildQuotePayloadFromOrder(order);
+    const validationError = validatePackages(payload.packages);
 
-    if (!packages.length) {
-      return res.status(400).json({
-        message: "No se pudieron construir los paquetes",
-      });
+    if (validationError) {
+      return res.status(400).json({ message: validationError });
     }
-
-    const hasInvalidPackage = packages.some(
-      (p) => !p.weight || !p.length || !p.width || !p.height
-    );
-
-    if (hasInvalidPackage) {
-      return res.status(400).json({
-        message: "Hay productos sin peso o dimensiones válidas",
-      });
-    }
-
-    const payload = {
-      origin: {
-        region: process.env.BLUE_ORIGIN_REGION,
-        city: process.env.BLUE_ORIGIN_CITY,
-        address: process.env.BLUE_ORIGIN_ADDRESS,
-        name: process.env.BLUE_ORIGIN_NAME,
-        phone: process.env.BLUE_ORIGIN_PHONE,
-      },
-      destination: {
-        region: order.shipping.region,
-        city: order.shipping.city,
-        address: order.shipping.address,
-      },
-      packages,
-    };
 
     const quote = await quoteBlueShipment(payload);
 
@@ -86,10 +61,8 @@ export const applyShippingToOrder = async (req, res) => {
     }
 
     const itemsTotal = Number(
-      order.items?.reduce(
-        (acc, item) => acc + Number(item.subtotal || 0),
+      order.items?.reduce((acc, item) => acc + Number(item.subtotal || 0), 0) ||
         0
-      ) || 0
     );
 
     const amount = Number(shippingAmount || 0);
@@ -112,4 +85,53 @@ export const applyShippingToOrder = async (req, res) => {
       error: error.message,
     });
   }
+};
+
+export const createShipmentForPaidOrder = async (orderId) => {
+  const order = await Order.findById(orderId).populate("items.product_id");
+
+  if (!order) {
+    throw new Error("Orden no encontrada");
+  }
+
+  if (order.status !== "paid") {
+    throw new Error("La orden aún no está pagada");
+  }
+
+  if (order.shipping?.tracking_number) {
+    return order;
+  }
+
+  const payload = buildQuotePayloadFromOrder(order);
+  const validationError = validatePackages(payload.packages);
+
+  if (validationError) {
+    throw new Error(validationError);
+  }
+
+  const shipmentPayload = {
+    ...payload,
+    serviceName: order.shipping?.service_name || null,
+    orderId: String(order._id),
+  };
+
+  const shipment = await createBlueShipment(shipmentPayload);
+
+  order.shipping.tracking_number =
+    shipment?.trackingNumber ||
+    shipment?.tracking_number ||
+    shipment?.data?.trackingNumber ||
+    null;
+
+  order.shipping.shipment_status =
+    shipment?.status || shipment?.shipment_status || "created";
+
+  order.shipping.label_url =
+    shipment?.labelUrl || shipment?.label_url || shipment?.data?.labelUrl || null;
+
+  order.shipping.shipment_created_at = new Date();
+
+  await order.save();
+
+  return order;
 };

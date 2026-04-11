@@ -1,10 +1,51 @@
 import Favorite from "../models/Favorite.js";
 import Product from "../models/Product.js";
 
+const getFavoriteOwnerFilter = (req) => {
+  if (req.user?.id) {
+    return { user_id: req.user.id };
+  }
+
+  const guestId = req.headers["x-guest-id"];
+
+  if (guestId) {
+    return { guest_id: guestId };
+  }
+
+  return null;
+};
+
+const getFavoriteOwnerData = (req) => {
+  if (req.user?.id) {
+    return {
+      user_id: req.user.id,
+      guest_id: null,
+    };
+  }
+
+  const guestId = req.headers["x-guest-id"];
+
+  if (guestId) {
+    return {
+      user_id: null,
+      guest_id: guestId,
+    };
+  }
+
+  return null;
+};
+
 export const addFavorite = async (req, res) => {
   try {
-    const userId = req.user.id;
+    const ownerFilter = getFavoriteOwnerFilter(req);
+    const ownerData = getFavoriteOwnerData(req);
     const { productId } = req.body;
+
+    if (!ownerFilter || !ownerData) {
+      return res.status(400).json({
+        message: "No se pudo identificar al usuario o invitado",
+      });
+    }
 
     if (!productId) {
       return res.status(400).json({
@@ -21,7 +62,7 @@ export const addFavorite = async (req, res) => {
     }
 
     const existingFavorite = await Favorite.findOne({
-      user_id: userId,
+      ...ownerFilter,
       product_id: productId,
     });
 
@@ -32,16 +73,16 @@ export const addFavorite = async (req, res) => {
     }
 
     const favorite = await Favorite.create({
-      user_id: userId,
+      ...ownerData,
       product_id: productId,
     });
 
-    res.status(201).json({
+    return res.status(201).json({
       message: "Producto agregado a favoritos",
       favorite,
     });
   } catch (error) {
-    res.status(500).json({
+    return res.status(500).json({
       message: "Error al agregar favorito",
       error: error.message,
     });
@@ -50,15 +91,19 @@ export const addFavorite = async (req, res) => {
 
 export const getMyFavorites = async (req, res) => {
   try {
-    const userId = req.user.id;
+    const ownerFilter = getFavoriteOwnerFilter(req);
 
-    const favorites = await Favorite.find({ user_id: userId })
+    if (!ownerFilter) {
+      return res.status(200).json([]);
+    }
+
+    const favorites = await Favorite.find(ownerFilter)
       .populate("product_id")
       .sort({ created_at: -1 });
 
-    res.json(favorites);
+    return res.json(favorites);
   } catch (error) {
-    res.status(500).json({
+    return res.status(500).json({
       message: "Error al obtener favoritos",
       error: error.message,
     });
@@ -67,11 +112,17 @@ export const getMyFavorites = async (req, res) => {
 
 export const removeFavorite = async (req, res) => {
   try {
-    const userId = req.user.id;
+    const ownerFilter = getFavoriteOwnerFilter(req);
     const { productId } = req.params;
 
+    if (!ownerFilter) {
+      return res.status(400).json({
+        message: "No se pudo identificar al usuario o invitado",
+      });
+    }
+
     const favorite = await Favorite.findOneAndDelete({
-      user_id: userId,
+      ...ownerFilter,
       product_id: productId,
     });
 
@@ -81,11 +132,11 @@ export const removeFavorite = async (req, res) => {
       });
     }
 
-    res.json({
+    return res.json({
       message: "Producto eliminado de favoritos",
     });
   } catch (error) {
-    res.status(500).json({
+    return res.status(500).json({
       message: "Error al eliminar favorito",
       error: error.message,
     });
@@ -94,19 +145,25 @@ export const removeFavorite = async (req, res) => {
 
 export const checkFavorite = async (req, res) => {
   try {
-    const userId = req.user.id;
+    const ownerFilter = getFavoriteOwnerFilter(req);
     const { productId } = req.params;
 
+    if (!ownerFilter) {
+      return res.json({
+        is_favorite: false,
+      });
+    }
+
     const favorite = await Favorite.findOne({
-      user_id: userId,
+      ...ownerFilter,
       product_id: productId,
     });
 
-    res.json({
+    return res.json({
       is_favorite: !!favorite,
     });
   } catch (error) {
-    res.status(500).json({
+    return res.status(500).json({
       message: "Error al verificar favorito",
       error: error.message,
     });

@@ -69,7 +69,13 @@ const orderSchema = new mongoose.Schema(
     user_id: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
-      required: true,
+      default: null,
+    },
+
+    guest_id: {
+      type: String,
+      default: null,
+      index: true,
     },
 
     items: {
@@ -81,6 +87,21 @@ const orderSchema = new mongoose.Schema(
       type: Number,
       required: true,
       min: 0,
+    },
+
+    customer: {
+      fullName: {
+        type: String,
+        default: null,
+      },
+      email: {
+        type: String,
+        default: null,
+      },
+      phone: {
+        type: String,
+        default: null,
+      },
     },
 
     status: {
@@ -98,7 +119,7 @@ const orderSchema = new mongoose.Schema(
 
     source: {
       type: String,
-      enum: ["custom_box", "box", "direct_product"],
+      enum: ["custom_box", "box", "direct_product", "cart"],
       default: "custom_box",
     },
 
@@ -109,7 +130,7 @@ const orderSchema = new mongoose.Schema(
       },
       platform: {
         type: String,
-        enum: ["ios", "android", "web"],
+        enum: ["ios", "android", "web", "native"],
         default: "web",
       },
       status: {
@@ -153,47 +174,66 @@ const orderSchema = new mongoose.Schema(
     },
 
     shipping: {
-  region: {
-    type: String,
-    required: true,
-    trim: true,
-  },
-  city: {
-    type: String,
-    required: true,
-    trim: true,
-  },
-  address: {
-    type: String,
-    required: true,
-    trim: true,
-  },
-  amount: {
-    type: Number,
-    default: 0,
-    min: 0,
-  },
-  carrier: {
-    type: String,
-    default: "blueexpress",
-  },
-  service_name: {
-    type: String,
-    default: null,
-  },
-  tracking_number: {
-    type: String,
-    default: null,
-  },
-  shipment_status: {
-    type: String,
-    default: null,
-  },
-  label_url: {
-    type: String,
-    default: null,
-  },
-},
+      region: {
+        type: String,
+        required: true,
+        trim: true,
+      },
+      city: {
+        type: String,
+        required: true,
+        trim: true,
+      },
+      address: {
+        type: String,
+        required: true,
+        trim: true,
+      },
+      addressLine2: {
+        type: String,
+        default: null,
+        trim: true,
+      },
+      reference: {
+        type: String,
+        default: null,
+        trim: true,
+      },
+      amount: {
+        type: Number,
+        default: 0,
+        min: 0,
+      },
+      carrier: {
+        type: String,
+        default: "blueexpress",
+      },
+      service_name: {
+        type: String,
+        default: null,
+      },
+      tracking_number: {
+        type: String,
+        default: null,
+      },
+      shipment_status: {
+        type: String,
+        default: null,
+      },
+      label_url: {
+        type: String,
+        default: null,
+      },
+      service_code: {
+        type: String,
+        default: null,
+      },
+    },
+    notes: {
+      type: String,
+      default: null,
+      trim: true,
+    },
 
     coupon: {
       code: {

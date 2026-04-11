@@ -12,156 +12,233 @@ import {
   calculateCouponDiscount,
   validateCouponForUser,
 } from "../utils/coupon.js";
+import Cart from "../models/Cart.js";
 
-export const createOrderFromCustomBox = async (req, res) => {
+const getCartOwnerFilter = (req) => {
+  if (req.user?.id) {
+    return {
+      user_id: req.user.id,
+      status: "active",
+    };
+  }
+
+  const guestId = req.headers["x-guest-id"];
+
+  if (!guestId) {
+    return null;
+  }
+
+  return {
+    guest_id: guestId,
+    status: "active",
+  };
+};
+
+export const createOrderFromCart = async (req, res) => {
   try {
-    const userId = req.user.id;
-    const { shipping, payment, couponCode } = req.body;
-    console.log(req.body);
+    const ownerFilter = getCartOwnerFilter(req);
+
+    if (!ownerFilter) {
+      return res.status(400).json({
+        message: "No se pudo identificar el carrito",
+      });
+    }
+
+    const cart = await Cart.findOne(ownerFilter);
+
+    if (!cart || !Array.isArray(cart.items) || !cart.items.length) {
+      return res.status(400).json({
+        message: "El carrito está vacío",
+      });
+    }
+
+    const { customer, shipping, payment, notes, couponCode } = req.body;
+
+    if (!customer?.fullName || !customer?.email || !customer?.phone) {
+      return res.status(400).json({
+        message: "Faltan datos del cliente",
+      });
+    }
 
     if (!shipping?.region || !shipping?.city || !shipping?.address) {
       return res.status(400).json({
-        message: "Los datos de envío son obligatorios",
+        message: "Faltan datos de envío",
       });
     }
 
-    const customBox = await CustomBox.findOne({
-      user_id: userId,
-      status: "draft",
-    });
+    const validatedItems = [];
 
-    if (!customBox) {
-      return res.status(404).json({
-        message: "No existe una caja activa para convertir en orden",
-      });
-    }
-
-    if (!customBox.items.length) {
-      return res.status(400).json({
-        message: "La caja está vacía",
-      });
-    }
-
-    const orderItems = [];
-    const subtotalBeforeCoupon = customBox.total;
-    let coupon = null;
-    let couponDiscount = 0;
-
-    if (couponCode) {
-      coupon = await Coupon.findOne({
-        code: couponCode.toUpperCase(),
-      });
-
-      const validation = await validateCouponForUser({
-        coupon,
-        userId,
-        subtotal: subtotalBeforeCoupon,
-      });
-
-      if (!validation.valid) {
-        return res.status(400).json({
-          message: validation.message,
-        });
-      }
-
-      couponDiscount = calculateCouponDiscount({
-        coupon,
-        subtotal: subtotalBeforeCoupon,
-      });
-    }
-
-    for (const item of customBox.items) {
+    for (const item of cart.items) {
       const product = await Product.findById(item.product_id);
 
-      if (!product) {
-        return res.status(404).json({
-          message: `Producto no encontrado: ${item.name}`,
-        });
-      }
-
-      if (!product.is_active) {
+      if (!product || !product.is_active) {
         return res.status(400).json({
-          message: `El producto ${product.name} está inactivo`,
+          message: `Uno de los productos ya no está disponible: ${item.name}`,
         });
       }
 
-      if (product.stock < item.quantity) {
-        return res.status(400).json({
-          message: `Stock insuficiente para ${product.name}. Disponible: ${product.stock}`,
-        });
-      }
-
-      orderItems.push({
+      validatedItems.push({
         product_id: item.product_id,
         name: item.name,
-        quantity: item.quantity,
-        price: item.unit_price,
-        tier_label: item.tier_label,
-        subtotal: item.subtotal,
-        original_price: item.original_unit_price,
-        original_subtotal: item.original_subtotal,
-        discount_applied: item.discount_applied,
-        discount_percent: item.discount_percent,
-        discount_amount_per_unit: item.discount_amount_per_unit,
-        discount_source: item.discount_source,
+        quantity: Number(item.quantity || 0),
+        price: Number(item.unit_price || 0),
+        original_price: Number(item.unit_price || 0),
+        tier_label: null,
+        discount_applied: false,
+        discount_percent: 0,
+        discount_amount_per_unit: 0,
+        discount_source: null,
+        subtotal: Number(item.subtotal || 0),
+        original_subtotal: Number(item.subtotal || 0),
       });
     }
 
+    const itemsTotal = validatedItems.reduce(
+      (acc, item) => acc + Number(item.subtotal || 0),
+      0
+    );
+
     const order = await Order.create({
-      user_id: userId,
-      custom_box_id: customBox._id,
-      items: orderItems,
-      total: subtotalBeforeCoupon - couponDiscount,
-      status: "pending",
-      source: "custom_box",
+      user_id: req.user?.id || null,
+      guest_id: req.user?.id ? null : req.headers["x-guest-id"] || null,
+      items: validatedItems,
+      total: itemsTotal,
+      customer: {
+        fullName: customer.fullName,
+        email: customer.email,
+        phone: customer.phone,
+      },
+      shipping: {
+        region: shipping.region,
+        city: shipping.city,
+        address: shipping.address,
+        addressLine2: shipping.addressLine2 || null,
+        reference: shipping.reference || null,
+        amount: 0,
+        carrier: "blueexpress",
+        service_name: null,
+        tracking_number: null,
+        shipment_status: null,
+        label_url: null,
+        service_code: null,
+      },
       payment: {
         method: payment?.method || "webpay",
+        platform: payment?.platform || "web",
         status: "pending",
         transaction_id: null,
         token: null,
         buy_order: null,
         session_id: null,
-        amount: subtotalBeforeCoupon - couponDiscount,
+        amount: itemsTotal,
         authorization_code: null,
         response_code: null,
         transaction_date: null,
       },
-      shipping,
-      coupon: coupon
-        ? {
-            code: coupon.code,
-            discount_amount: couponDiscount,
-          }
-        : {
-            code: null,
-            discount_amount: 0,
-          },
+      coupon: {
+        code: couponCode || null,
+        discount_amount: 0,
+      },
+      status: "pending",
+      source: "cart",
+      notes: notes || null,
     });
 
-    const totalOriginal = customBox.items.reduce(
-      (acc, item) => acc + (item.original_subtotal || item.subtotal),
-      0,
-    );
+    cart.status = "converted";
+    await cart.save();
 
-    const totalDiscountFromItems = totalOriginal - customBox.total;
-
-    res.status(201).json({
-      message: "Orden pendiente de pago creada correctamente",
+    return res.status(201).json({
+      message: "Orden creada correctamente desde el carrito",
       order,
-      summary: {
-        total_original: totalOriginal,
-        total_items_discount: totalDiscountFromItems,
-        coupon_discount: couponDiscount,
-        total_final: subtotalBeforeCoupon - couponDiscount,
-      },
     });
   } catch (error) {
-    res.status(500).json({
-      message: "Error al crear la orden",
+    console.error("CREATE ORDER FROM CART ERROR:", error?.message);
+
+    return res.status(500).json({
+      message: "Error al crear la orden desde el carrito",
       error: error.message,
     });
   }
 };
+
+export const createOrderFromCustomBox = async (req, res) => {
+  try {
+    const box = await CustomBox.findOne({
+      user_id: req.user.id,
+      status: "draft",
+    }).populate("items.product_id");
+
+    if (!box || !box.items?.length) {
+      return res.status(400).json({
+        message: "No hay productos en la caja",
+      });
+    }
+
+    const items = box.items.map((item) => ({
+      product_id: item.product_id?._id || item.product_id,
+      name: item.name,
+      quantity: item.quantity,
+      price: item.unit_price ?? item.price ?? 0,
+      original_price: item.original_unit_price ?? item.original_price ?? null,
+      tier_label: item.tier_label || null,
+      discount_applied: !!item.discount_applied,
+      discount_percent: Number(item.discount_percent || 0),
+      discount_amount_per_unit: Number(item.discount_amount_per_unit || 0),
+      discount_source: item.discount_source || null,
+      subtotal: Number(item.subtotal || 0),
+      original_subtotal: Number(item.original_subtotal || 0),
+    }));
+
+    const itemsTotal = items.reduce(
+      (acc, item) => acc + Number(item.subtotal || 0),
+      0
+    );
+
+    const order = await Order.create({
+      user_id: req.user.id,
+      customer: {
+        fullName: req.body.customer?.fullName || null,
+        email: req.body.customer?.email || null,
+        phone: req.body.customer?.phone || null,
+      },
+      items,
+      total: itemsTotal,
+      status: "pending",
+      source: "custom_box",
+      payment: {
+        method: req.body.payment?.method || "webpay",
+        status: "pending",
+        platform: "web",
+      },
+      shipping: {
+        region: req.body.shipping?.region || "",
+        city: req.body.shipping?.city || "",
+        address: req.body.shipping?.address || "",
+        addressLine2: req.body.shipping?.addressLine2 || null,
+        reference: req.body.shipping?.reference || null,
+        amount: 0,
+        carrier: "blueexpress",
+        service_name: null,
+        tracking_number: null,
+        shipment_status: null,
+        label_url: null,
+      },
+      notes: req.body.notes || null,
+    });
+
+    return res.status(201).json({
+      message: "Orden creada correctamente",
+      order,
+    });
+  } catch (error) {
+    console.error("CREATE ORDER FROM CUSTOM BOX ERROR:", error);
+    return res.status(500).json({
+      message: "No se pudo crear la orden",
+      error: error.message,
+    });
+  }
+};
+
 export const getMyProducts = async (req, res) => {
   try {
     if (req.user.role === "admin") {
@@ -171,7 +248,7 @@ export const getMyProducts = async (req, res) => {
     }
 
     const vendor = await Vendor.findOne({ user_id: req.user.id });
-    console.log(vendor);
+
     if (!vendor) {
       return res.status(404).json({ message: "Vendor no encontrado" });
     }
@@ -226,6 +303,39 @@ export const getOrderById = async (req, res) => {
   } catch (error) {
     res.status(500).json({
       message: "Error al obtener la orden",
+      error: error.message,
+    });
+  }
+};
+
+// ✅ NUEVO: detalle para invitado
+export const getGuestOrderById = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const email = String(req.query.email || "").trim().toLowerCase();
+
+    if (!email) {
+      return res.status(400).json({
+        message: "Debes proporcionar el email de la compra",
+      });
+    }
+
+    const order = await Order.findOne({
+      _id: id,
+      user_id: null,
+      "customer.email": email,
+    });
+
+    if (!order) {
+      return res.status(404).json({
+        message: "Orden no encontrada para ese correo",
+      });
+    }
+
+    return res.json(order);
+  } catch (error) {
+    return res.status(500).json({
+      message: "Error al obtener la orden de invitado",
       error: error.message,
     });
   }

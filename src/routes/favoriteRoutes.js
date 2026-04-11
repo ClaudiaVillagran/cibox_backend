@@ -5,15 +5,13 @@ import {
   getMyFavorites,
   removeFavorite,
 } from "../controllers/favoriteController.js";
-import { protect } from "../middlewares/authMiddleware.js";
+import { optionalAuth } from "../middlewares/optionalAuthMiddleware.js";
 
 const router = express.Router();
 
-router.use(protect);
-
-router.get("/", getMyFavorites);
-router.get("/:productId/check", checkFavorite);
-router.post("/", addFavorite);
-router.delete("/:productId", removeFavorite);
+router.get("/", optionalAuth, getMyFavorites);
+router.get("/:productId/check", optionalAuth, checkFavorite);
+router.post("/", optionalAuth, addFavorite);
+router.delete("/:productId", optionalAuth, removeFavorite);
 
 export default router;

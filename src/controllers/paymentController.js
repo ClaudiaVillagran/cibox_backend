@@ -1,6 +1,7 @@
 import Order from "../models/Order.js";
 import pkg from "transbank-sdk";
 import { webpayOptions } from "../config/webpay.js";
+import { createShipmentForPaidOrder } from "./shippingController.js";
 
 const { WebpayPlus } = pkg;
 
@@ -10,6 +11,19 @@ const buildBuyOrder = (orderId) => {
   const shortId = String(orderId).slice(-10);
   const shortTs = Date.now().toString().slice(-8);
   return `O${shortId}${shortTs}`;
+};
+
+const getFrontendUrls = (order) => {
+  const isWeb = order?.payment?.platform === "web";
+
+  return {
+    successBase: isWeb
+      ? process.env.FRONTEND_SUCCESS_URL_WEB
+      : process.env.FRONTEND_SUCCESS_URL,
+    failedBase: isWeb
+      ? process.env.FRONTEND_FAILED_URL_WEB
+      : process.env.FRONTEND_FAILED_URL,
+  };
 };
 
 export const createWebpayTransaction = async (req, res) => {
@@ -36,7 +50,6 @@ export const createWebpayTransaction = async (req, res) => {
     const returnUrl = process.env.WEBPAY_RETURN_URL;
 
     const tx = getTransaction();
-
     const response = await tx.create(buyOrder, sessionId, amount, returnUrl);
 
     order.payment = {
@@ -107,8 +120,15 @@ export const commitWebpayTransaction = async (req, res) => {
     };
 
     order.status = isApproved ? "paid" : "pending";
-
     await order.save();
+
+    if (isApproved) {
+      try {
+        await createShipmentForPaidOrder(order._id);
+      } catch (shipmentError) {
+        console.error("BLUE SHIPMENT AFTER COMMIT ERROR:", shipmentError.message);
+      }
+    }
 
     return res.status(200).json({
       message: isApproved ? "Pago confirmado" : "Pago rechazado",
@@ -139,7 +159,6 @@ export const handleWebpayReturn = async (req, res) => {
         ? req.query.TBK_ORDEN_COMPRA
         : req.body.TBK_ORDEN_COMPRA;
 
-    // ✅ PAGO EXITOSO
     if (tokenWs) {
       const tx = getTransaction();
       const response = await tx.commit(tokenWs);
@@ -165,24 +184,24 @@ export const handleWebpayReturn = async (req, res) => {
         };
 
         order.status = isApproved ? "paid" : "pending";
-
         await order.save();
 
-        const isWeb = order?.payment?.platform === "web";
+        if (isApproved) {
+          try {
+            await createShipmentForPaidOrder(order._id);
+          } catch (shipmentError) {
+            console.error(
+              "BLUE SHIPMENT AFTER RETURN ERROR:",
+              shipmentError.message
+            );
+          }
+        }
 
-        const successBase = isWeb
-          ? process.env.FRONTEND_SUCCESS_URL_WEB
-          : process.env.FRONTEND_SUCCESS_URL;
-
-        const failedBase = isWeb
-          ? process.env.FRONTEND_FAILED_URL_WEB
-          : process.env.FRONTEND_FAILED_URL;
+        const { successBase, failedBase } = getFrontendUrls(order);
 
         const redirectUrl = isApproved
           ? `${successBase}?orderId=${order._id}`
-          : isWeb
-            ? `${failedBase}/${order._id}`
-            : `${failedBase}/${order._id}`;
+          : `${failedBase}?orderId=${order._id}&status=rejected`;
 
         return res.redirect(redirectUrl);
       }
@@ -192,7 +211,6 @@ export const handleWebpayReturn = async (req, res) => {
         .send("Transacción procesada, pero no se encontró la orden");
     }
 
-    // ❌ PAGO CANCELADO
     if (tbkToken) {
       const order = await Order.findOne({ "payment.buy_order": tbkOrder });
 
@@ -205,10 +223,12 @@ export const handleWebpayReturn = async (req, res) => {
         };
 
         order.status = "cancelled";
-
         await order.save();
 
-        return res.redirect(`${failedBase}/${order._id}?status=cancelled`);
+        const { failedBase } = getFrontendUrls(order);
+        return res.redirect(
+          `${failedBase}?orderId=${order._id}&status=cancelled`
+        );
       }
 
       return res.status(200).send("Pago cancelado por el usuario");

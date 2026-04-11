@@ -16,6 +16,7 @@ import reviewRoutes from "./routes/reviewRoutes.js";
 import notificationRoutes from "./routes/notificationRoutes.js";
 import paymentRoutes from "./routes/paymentRoutes.js";const app = express();
 import shippingRoutes from "./routes/shippingRoutes.js";
+import cartRoutes from "./routes/cartRoutes.js";
 
 app.use(cors());
 app.use(express.json());
@@ -41,6 +42,7 @@ app.use("/api/reviews", reviewRoutes);
 app.use("/api/notifications", notificationRoutes);
 app.use("/api/payments", paymentRoutes);
 app.use("/api/shipping", shippingRoutes);
+app.use("/api/cart", cartRoutes);
 
 app.get("/success", (req, res) => {
   const { orderId } = req.query;
