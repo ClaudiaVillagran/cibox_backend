@@ -1,9 +1,50 @@
+import mongoose from "mongoose";
 import Product from "../models/Product.js";
 import Vendor from "../models/Vendor.js";
 import { normalizeText } from "../utils/normalizeText.js";
 import Favorite from "../models/Favorite.js";
 import Pantry from "../models/Pantry.js";
 import Order from "../models/Order.js";
+
+const validateBoxItems = async (boxItems = [], currentProductId = null) => {
+  if (!Array.isArray(boxItems) || boxItems.length < 2) {
+    return "La caja debe incluir al menos 2 productos";
+  }
+
+  const productIds = boxItems.map((item) => item.product_id);
+
+  const hasInvalidId = productIds.some(
+    (id) => !mongoose.Types.ObjectId.isValid(id)
+  );
+
+  if (hasInvalidId) {
+    return "Uno o más product_id de box_items no son válidos";
+  }
+
+  if (
+    currentProductId &&
+    productIds.some((id) => String(id) === String(currentProductId))
+  ) {
+    return "Una caja no puede incluirse a sí misma";
+  }
+
+  const products = await Product.find({
+    _id: { $in: productIds },
+    is_active: true,
+  });
+
+  if (products.length !== productIds.length) {
+    return "Uno o más productos de la caja no existen o están inactivos";
+  }
+
+  const hasBoxInside = products.some((product) => product.product_type === "box");
+
+  if (hasBoxInside) {
+    return "No se permite incluir cajas dentro de otra caja";
+  }
+
+  return null;
+};
 
 export const createProduct = async (req, res) => {
   try {
@@ -50,8 +91,18 @@ export const createProduct = async (req, res) => {
       };
     }
 
+    const productType = req.body.product_type || "simple";
+
+    if (productType === "box") {
+      const error = await validateBoxItems(req.body.box_items);
+      if (error) {
+        return res.status(400).json({ message: error });
+      }
+    }
+
     const product = await Product.create({
       ...req.body,
+      product_type: productType,
       search_name: normalizeText(req.body.name),
       vendor: vendorData,
     });
@@ -79,6 +130,7 @@ export const getProducts = async (req, res) => {
       sort,
       page = 1,
       limit = 10,
+      product_type,
     } = req.query;
 
     const filters = {
@@ -91,6 +143,10 @@ export const getProducts = async (req, res) => {
 
     if (vendor) {
       filters["vendor.id"] = vendor;
+    }
+
+    if (product_type) {
+      filters.product_type = product_type;
     }
 
     if (search) {
@@ -169,7 +225,11 @@ export const getProducts = async (req, res) => {
 
 export const getProductById = async (req, res) => {
   try {
-    const product = await Product.findById(req.params.id);
+    const product = await Product.findById(req.params.id).populate({
+      path: "box_items.product_id",
+      select:
+        "name thumbnail images pricing stock vendor category weight dimensions sku brand is_active product_type",
+    });
 
     if (!product) {
       return res.status(404).json({
@@ -192,7 +252,6 @@ export const updateProduct = async (req, res) => {
     const vendor = await Vendor.findOne({ user_id: userId });
     const product = await Product.findById(req.params.id);
 
-    console.log(product);
     if (!product) {
       return res.status(404).json({
         message: "Producto no encontrado",
@@ -210,15 +269,37 @@ export const updateProduct = async (req, res) => {
 
     const updateData = { ...req.body };
     delete updateData.vendor;
+
+    const finalProductType = updateData.product_type || product.product_type;
+
     if (updateData.name) {
       updateData.search_name = normalizeText(updateData.name);
     }
 
+    if (finalProductType === "box") {
+      const boxItemsToValidate =
+        updateData.box_items !== undefined ? updateData.box_items : product.box_items;
+
+      const error = await validateBoxItems(boxItemsToValidate, product._id);
+      if (error) {
+        return res.status(400).json({ message: error });
+      }
+    } else {
+      updateData.box_items = [];
+    }
+
     const updatedProduct = await Product.findByIdAndUpdate(
       req.params.id,
-      updateData,
-      { new: true, runValidators: true },
-    );
+      {
+        ...updateData,
+        product_type: finalProductType,
+      },
+      { new: true, runValidators: true }
+    ).populate({
+      path: "box_items.product_id",
+      select:
+        "name thumbnail images pricing stock vendor category weight dimensions sku brand is_active product_type",
+    });
 
     res.json({
       message: "Producto actualizado correctamente",
@@ -267,6 +348,7 @@ export const deactivateProduct = async (req, res) => {
     });
   }
 };
+
 export const getTopRatedProducts = async (req, res) => {
   try {
     const { category, limit = 10, minReviews = 1 } = req.query;
@@ -525,6 +607,7 @@ export const reactivateProduct = async (req, res) => {
     });
   }
 };
+
 export const updateProductStock = async (req, res) => {
   try {
     const userId = req.user.id;

@@ -61,7 +61,7 @@ const orderItemSchema = new mongoose.Schema(
       min: 0,
     },
   },
-  { _id: false },
+  { _id: false }
 );
 
 const orderSchema = new mongoose.Schema(
@@ -93,14 +93,23 @@ const orderSchema = new mongoose.Schema(
       fullName: {
         type: String,
         default: null,
+        trim: true,
       },
       email: {
         type: String,
         default: null,
+        trim: true,
+        lowercase: true,
       },
       phone: {
         type: String,
         default: null,
+        trim: true,
+      },
+      rut: {
+        type: String,
+        default: null,
+        trim: true,
       },
     },
 
@@ -206,9 +215,13 @@ const orderSchema = new mongoose.Schema(
       },
       carrier: {
         type: String,
-        default: "blueexpress",
+        default: "blueexpress_manual",
       },
       service_name: {
+        type: String,
+        default: null,
+      },
+      service_code: {
         type: String,
         default: null,
       },
@@ -224,11 +237,8 @@ const orderSchema = new mongoose.Schema(
         type: String,
         default: null,
       },
-      service_code: {
-        type: String,
-        default: null,
-      },
     },
+
     notes: {
       type: String,
       default: null,
@@ -249,7 +259,7 @@ const orderSchema = new mongoose.Schema(
   },
   {
     timestamps: { createdAt: "created_at", updatedAt: "updated_at" },
-  },
+  }
 );
 
 export default mongoose.model("Order", orderSchema);

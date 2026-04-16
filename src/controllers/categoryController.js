@@ -9,10 +9,9 @@ const generateSlug = (text) => {
     .replace(/\s+/g, "-")
     .replace(/[^a-z0-9-]/g, "");
 };
-
 export const createCategory = async (req, res) => {
   try {
-    const { name } = req.body;
+    const { name, image, is_featured } = req.body;
 
     if (!name) {
       return res.status(400).json({
@@ -35,6 +34,8 @@ export const createCategory = async (req, res) => {
     const category = await Category.create({
       name,
       slug,
+      image: image || null,
+      is_featured: is_featured || false,
     });
 
     res.status(201).json({
@@ -48,7 +49,6 @@ export const createCategory = async (req, res) => {
     });
   }
 };
-
 export const getCategories = async (req, res) => {
   try {
     const categories = await Category.find({ is_active: true }).sort({ name: 1 });
@@ -136,6 +136,24 @@ export const deactivateCategory = async (req, res) => {
   } catch (error) {
     res.status(500).json({
       message: "Error al desactivar categoría",
+      error: error.message,
+    });
+  }
+};
+
+export const getFeaturedCategories = async (req, res) => {
+  console.log('object');
+  try {
+    const categories = await Category.find({
+      is_active: true,
+      is_featured: true,
+    }).sort({ name: 1 });
+
+    console.log(categories);
+    res.json(categories);
+  } catch (error) {
+    res.status(500).json({
+      message: "Error al obtener categorías destacadas",
       error: error.message,
     });
   }

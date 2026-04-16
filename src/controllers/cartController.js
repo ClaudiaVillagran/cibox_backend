@@ -47,6 +47,96 @@ const createCartOwnerData = (req) => {
   };
 };
 
+const normalizeCartProductType = (productType) => {
+  return productType === "box" ? "box" : "individual";
+};
+
+const buildBoxItemsDetails = async (rawBoxItems = []) => {
+  if (!Array.isArray(rawBoxItems) || rawBoxItems.length === 0) {
+    return [];
+  }
+
+  const productIds = rawBoxItems
+    .map((item) => item?.product_id)
+    .filter(Boolean);
+
+  if (!productIds.length) {
+    return [];
+  }
+
+  const products = await Product.find({
+    _id: { $in: productIds },
+  }).lean();
+
+  const productsMap = new Map(
+    products.map((product) => [String(product._id), product])
+  );
+
+  return rawBoxItems.map((boxItem) => {
+    const product = productsMap.get(String(boxItem.product_id));
+    const unitPrice = Number(product?.pricing?.tiers?.[0]?.price || 0);
+
+    return {
+      product_id: boxItem.product_id,
+      quantity: Number(boxItem.quantity || 1),
+      name: product?.name || "Producto",
+      thumbnail: product?.thumbnail || product?.images?.[0] || "",
+      unit_price: unitPrice,
+      brand: product?.brand || "",
+    };
+  });
+};
+
+const buildCartItemFromProduct = async (product, quantity) => {
+  const parsedQuantity = Number(quantity || 0);
+  const basePrice = Number(product?.pricing?.tiers?.[0]?.price || 0);
+  const normalizedProductType = normalizeCartProductType(product?.product_type);
+
+  let enrichedBoxItems = [];
+
+  if (normalizedProductType === "box") {
+    enrichedBoxItems = await buildBoxItemsDetails(product?.box_items || []);
+  }
+
+  return {
+    product_id: product._id,
+    name: product.name,
+    thumbnail: product.thumbnail || product.images?.[0] || "",
+    quantity: parsedQuantity,
+    unit_price: basePrice,
+    subtotal: parsedQuantity * basePrice,
+    product_type: normalizedProductType,
+    box_items: enrichedBoxItems,
+  };
+};
+
+const enrichCartItems = async (items = []) => {
+  return Promise.all(
+    items.map(async (item) => {
+      const plainItem = item.toObject ? item.toObject() : item;
+      const normalizedType = normalizeCartProductType(plainItem?.product_type);
+
+      if (normalizedType !== "box") {
+        return {
+          ...plainItem,
+          product_type: "individual",
+          box_items: [],
+        };
+      }
+
+      const enrichedBoxItems = await buildBoxItemsDetails(
+        plainItem?.box_items || []
+      );
+
+      return {
+        ...plainItem,
+        product_type: "box",
+        box_items: enrichedBoxItems,
+      };
+    })
+  );
+};
+
 export const getOrCreateCart = async (req, res) => {
   try {
     const ownerFilter = getCartOwnerFilter(req);
@@ -68,7 +158,13 @@ export const getOrCreateCart = async (req, res) => {
       });
     }
 
-    return res.status(200).json(cart);
+    const enrichedItems = await enrichCartItems(cart.items || []);
+
+    return res.status(200).json({
+      ...cart.toObject(),
+      items: enrichedItems,
+      total: recalculateCartTotal(enrichedItems),
+    });
   } catch (error) {
     return res.status(500).json({
       message: "Error al obtener el carrito",
@@ -134,33 +230,40 @@ export const addItemToCart = async (req, res) => {
     );
 
     if (itemIndex >= 0) {
-      cart.items[itemIndex].quantity += parsedQuantity;
-      cart.items[itemIndex].unit_price = basePrice;
-      cart.items[itemIndex].subtotal =
-        cart.items[itemIndex].quantity * basePrice;
-      cart.items[itemIndex].thumbnail =
-        product.thumbnail || product.images?.[0] || "";
-      cart.items[itemIndex].name = product.name;
+      const currentQty = Number(cart.items[itemIndex].quantity || 0);
+      const newQuantity = currentQty + parsedQuantity;
+      const rebuiltItem = await buildCartItemFromProduct(product, newQuantity);
+
+      cart.items[itemIndex].name = rebuiltItem.name;
+      cart.items[itemIndex].thumbnail = rebuiltItem.thumbnail;
+      cart.items[itemIndex].quantity = rebuiltItem.quantity;
+      cart.items[itemIndex].unit_price = rebuiltItem.unit_price;
+      cart.items[itemIndex].subtotal = rebuiltItem.subtotal;
+      cart.items[itemIndex].product_type = rebuiltItem.product_type;
+      cart.items[itemIndex].box_items = rebuiltItem.box_items;
     } else {
-      cart.items.push({
-        product_id: product._id,
-        name: product.name,
-        thumbnail: product.thumbnail || product.images?.[0] || "",
-        quantity: parsedQuantity,
-        unit_price: basePrice,
-        subtotal: parsedQuantity * basePrice,
-      });
+      const builtItem = await buildCartItemFromProduct(product, parsedQuantity);
+      cart.items.push(builtItem);
     }
 
     cart.total = recalculateCartTotal(cart.items);
 
     await cart.save();
 
+    const refreshedCart = await Cart.findById(cart._id);
+    const enrichedItems = await enrichCartItems(refreshedCart.items || []);
+
     return res.status(200).json({
       message: "Producto agregado al carrito",
-      cart,
+      cart: {
+        ...refreshedCart.toObject(),
+        items: enrichedItems,
+        total: recalculateCartTotal(enrichedItems),
+      },
     });
   } catch (error) {
+    console.error("ADD ITEM TO CART ERROR:", error);
+
     return res.status(500).json({
       message: "Error al agregar producto al carrito",
       error: error.message,
@@ -222,20 +325,30 @@ export const updateCartItem = async (req, res) => {
       });
     }
 
-    cart.items[itemIndex].quantity = parsedQuantity;
-    cart.items[itemIndex].unit_price = basePrice;
-    cart.items[itemIndex].subtotal = parsedQuantity * basePrice;
-    cart.items[itemIndex].thumbnail =
-      product.thumbnail || product.images?.[0] || "";
-    cart.items[itemIndex].name = product.name;
+    const rebuiltItem = await buildCartItemFromProduct(product, parsedQuantity);
+
+    cart.items[itemIndex].name = rebuiltItem.name;
+    cart.items[itemIndex].thumbnail = rebuiltItem.thumbnail;
+    cart.items[itemIndex].quantity = rebuiltItem.quantity;
+    cart.items[itemIndex].unit_price = rebuiltItem.unit_price;
+    cart.items[itemIndex].subtotal = rebuiltItem.subtotal;
+    cart.items[itemIndex].product_type = rebuiltItem.product_type;
+    cart.items[itemIndex].box_items = rebuiltItem.box_items;
 
     cart.total = recalculateCartTotal(cart.items);
 
     await cart.save();
 
+    const refreshedCart = await Cart.findById(cart._id);
+    const enrichedItems = await enrichCartItems(refreshedCart.items || []);
+
     return res.status(200).json({
       message: "Cantidad actualizada correctamente",
-      cart,
+      cart: {
+        ...refreshedCart.toObject(),
+        items: enrichedItems,
+        total: recalculateCartTotal(enrichedItems),
+      },
     });
   } catch (error) {
     return res.status(500).json({
@@ -272,9 +385,16 @@ export const removeItemFromCart = async (req, res) => {
 
     await cart.save();
 
+    const refreshedCart = await Cart.findById(cart._id);
+    const enrichedItems = await enrichCartItems(refreshedCart.items || []);
+
     return res.status(200).json({
       message: "Producto eliminado del carrito",
-      cart,
+      cart: {
+        ...refreshedCart.toObject(),
+        items: enrichedItems,
+        total: recalculateCartTotal(enrichedItems),
+      },
     });
   } catch (error) {
     return res.status(500).json({

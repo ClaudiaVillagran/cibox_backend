@@ -49,6 +49,8 @@ export const createWebpayTransaction = async (req, res) => {
     const amount = Math.round(order.total);
     const returnUrl = process.env.WEBPAY_RETURN_URL;
 
+    console.log("WEBPAY RETURN URL:", returnUrl);
+
     const tx = getTransaction();
     const response = await tx.create(buyOrder, sessionId, amount, returnUrl);
 
@@ -99,6 +101,15 @@ export const commitWebpayTransaction = async (req, res) => {
       return res.status(403).json({ message: "No autorizado para esta orden" });
     }
 
+    // Evitar doble commit también aquí
+    if (order.payment?.status === "approved" || order.status === "paid") {
+      return res.status(200).json({
+        message: "Pago ya confirmado previamente",
+        success: true,
+        order,
+      });
+    }
+
     const tx = getTransaction();
     const response = await tx.commit(token);
 
@@ -121,14 +132,6 @@ export const commitWebpayTransaction = async (req, res) => {
 
     order.status = isApproved ? "paid" : "pending";
     await order.save();
-
-    if (isApproved) {
-      try {
-        await createShipmentForPaidOrder(order._id);
-      } catch (shipmentError) {
-        console.error("BLUE SHIPMENT AFTER COMMIT ERROR:", shipmentError.message);
-      }
-    }
 
     return res.status(200).json({
       message: isApproved ? "Pago confirmado" : "Pago rechazado",
@@ -160,61 +163,102 @@ export const handleWebpayReturn = async (req, res) => {
         : req.body.TBK_ORDEN_COMPRA;
 
     if (tokenWs) {
-      const tx = getTransaction();
-      const response = await tx.commit(tokenWs);
+      console.log("WEBPAY RETURN token_ws:", tokenWs);
 
       const order = await Order.findOne({ "payment.token": tokenWs });
 
-      if (order) {
-        const isApproved =
-          response?.status === "AUTHORIZED" &&
-          Number(response?.response_code) === 0;
+      if (!order) {
+        return res
+          .status(404)
+          .send("No se encontró la orden asociada a la transacción");
+      }
+      const { successBase, failedBase } = getFrontendUrls(order);
 
-        order.payment = {
-          ...(order.payment || {}),
-          method: "webpay",
-          status: isApproved ? "approved" : "rejected",
-          token: tokenWs,
-          authorization_code: response?.authorization_code || null,
-          transaction_date: response?.transaction_date || new Date(),
-          response_code: response?.response_code ?? null,
-          buy_order: response?.buy_order || order?.payment?.buy_order,
-          session_id: response?.session_id || order?.payment?.session_id,
-          amount: response?.amount || order?.total,
-        };
+      console.log("ORDER PAYMENT PLATFORM:", order?.payment?.platform);
+      console.log(
+        "FRONTEND_SUCCESS_URL_WEB:",
+        process.env.FRONTEND_SUCCESS_URL_WEB,
+      );
+      console.log("FRONTEND_SUCCESS_URL:", process.env.FRONTEND_SUCCESS_URL);
+      console.log("REDIRECT SUCCESS BASE:", successBase);
+      console.log("REDIRECT FAILED BASE:", failedBase);
 
-        order.status = isApproved ? "paid" : "pending";
-        await order.save();
-
-        if (isApproved) {
-          try {
-            await createShipmentForPaidOrder(order._id);
-          } catch (shipmentError) {
-            console.error(
-              "BLUE SHIPMENT AFTER RETURN ERROR:",
-              shipmentError.message
-            );
-          }
-        }
-
-        const { successBase, failedBase } = getFrontendUrls(order);
-
-        const redirectUrl = isApproved
-          ? `${successBase}?orderId=${order._id}`
-          : `${failedBase}?orderId=${order._id}&status=rejected`;
-
-        return res.redirect(redirectUrl);
+      // ✅ Ya procesada: no volver a commit
+      if (order.payment?.status === "approved" || order.status === "paid") {
+        return res.redirect(`${successBase}?orderId=${order._id}`);
       }
 
-      return res
-        .status(200)
-        .send("Transacción procesada, pero no se encontró la orden");
+      if (order.payment?.status === "rejected") {
+        return res.redirect(
+          `${failedBase}?orderId=${order._id}&status=rejected`,
+        );
+      }
+
+      if (
+        order.payment?.status === "cancelled" ||
+        order.status === "cancelled"
+      ) {
+        return res.redirect(
+          `${failedBase}?orderId=${order._id}&status=cancelled`,
+        );
+      }
+
+      const tx = getTransaction();
+      const response = await tx.commit(tokenWs);
+
+      console.log("WEBPAY RETURN RESPONSE:", response);
+
+      const isApproved =
+        response?.status === "AUTHORIZED" &&
+        Number(response?.response_code) === 0;
+
+      order.payment = {
+        ...(order.payment || {}),
+        method: "webpay",
+        status: isApproved ? "approved" : "rejected",
+        token: tokenWs,
+        authorization_code: response?.authorization_code || null,
+        transaction_date: response?.transaction_date || new Date(),
+        response_code: response?.response_code ?? null,
+        buy_order: response?.buy_order || order?.payment?.buy_order,
+        session_id: response?.session_id || order?.payment?.session_id,
+        amount: response?.amount || order?.total,
+      };
+
+      order.status = isApproved ? "paid" : "pending";
+      await order.save();
+
+      if (isApproved) {
+        try {
+          await createShipmentForPaidOrder(order._id);
+        } catch (shipmentError) {
+          console.error(
+            "BLUE SHIPMENT AFTER RETURN ERROR:",
+            shipmentError.message,
+          );
+        }
+      }
+
+      const redirectUrl = isApproved
+        ? `${successBase}?orderId=${order._id}`
+        : `${failedBase}?orderId=${order._id}&status=rejected`;
+
+      return res.redirect(redirectUrl);
     }
 
     if (tbkToken) {
       const order = await Order.findOne({ "payment.buy_order": tbkOrder });
 
       if (order) {
+        const { failedBase } = getFrontendUrls(order);
+
+        // Si ya estaba aprobada, no la pises
+        if (order.payment?.status === "approved" || order.status === "paid") {
+          return res.redirect(
+            `${failedBase}?orderId=${order._id}&status=approved`,
+          );
+        }
+
         order.payment = {
           ...(order.payment || {}),
           method: "webpay",
@@ -225,9 +269,8 @@ export const handleWebpayReturn = async (req, res) => {
         order.status = "cancelled";
         await order.save();
 
-        const { failedBase } = getFrontendUrls(order);
         return res.redirect(
-          `${failedBase}?orderId=${order._id}&status=cancelled`
+          `${failedBase}?orderId=${order._id}&status=cancelled`,
         );
       }
 
@@ -236,7 +279,8 @@ export const handleWebpayReturn = async (req, res) => {
 
     return res.status(400).send("Retorno Webpay inválido");
   } catch (error) {
-    console.error("WEBPAY RETURN ERROR:", error);
+    console.error("WEBPAY RETURN ERROR:", error?.message);
+    console.error(error);
     return res.status(500).send("Error procesando retorno Webpay");
   }
 };

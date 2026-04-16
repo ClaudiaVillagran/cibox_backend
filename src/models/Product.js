@@ -18,7 +18,24 @@ const pricingTierSchema = new mongoose.Schema(
       trim: true,
     },
   },
-  { _id: false },
+  { _id: false }
+);
+
+const boxItemSchema = new mongoose.Schema(
+  {
+    product_id: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Product",
+      required: true,
+    },
+    quantity: {
+      type: Number,
+      required: true,
+      min: 1,
+      default: 1,
+    },
+  },
+  { _id: false }
 );
 
 const productSchema = new mongoose.Schema(
@@ -36,15 +53,23 @@ const productSchema = new mongoose.Schema(
       },
     },
 
+    product_type: {
+      type: String,
+      enum: ["simple", "box"],
+      default: "simple",
+    },
+
     name: {
       type: String,
       required: true,
       trim: true,
     },
+
     images: {
       type: [String],
       default: [],
     },
+
     thumbnail: {
       type: String,
       default: "",
@@ -87,6 +112,18 @@ const productSchema = new mongoose.Schema(
       },
     },
 
+    box_items: {
+      type: [boxItemSchema],
+      default: [],
+      validate: {
+        validator: function (value) {
+          if (this.product_type !== "box") return true;
+          return Array.isArray(value) && value.length >= 2;
+        },
+        message: "La caja debe tener al menos 2 productos",
+      },
+    },
+
     stock: {
       type: Number,
       required: true,
@@ -105,17 +142,20 @@ const productSchema = new mongoose.Schema(
         default: false,
       },
     },
+
     average_rating: {
       type: Number,
       default: 0,
       min: 0,
       max: 5,
     },
+
     reviews_count: {
       type: Number,
       default: 0,
       min: 0,
     },
+
     sku: {
       type: String,
       trim: true,
@@ -166,7 +206,7 @@ const productSchema = new mongoose.Schema(
   },
   {
     timestamps: { createdAt: "created_at", updatedAt: "updated_at" },
-  },
+  }
 );
 
 export default mongoose.model("Product", productSchema);

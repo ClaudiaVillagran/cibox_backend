@@ -13,6 +13,15 @@ import {
   validateCouponForUser,
 } from "../utils/coupon.js";
 import Cart from "../models/Cart.js";
+import {
+  formatRut,
+  isValidEmailFormat,
+  isValidPhoneCL,
+  isValidRut,
+  normalizeEmail,
+  normalizePhoneCL,
+  validateCheckoutPayload,
+} from "../utils/checkoutValidation.js";
 
 const getCartOwnerFilter = (req) => {
   if (req.user?.id) {
@@ -54,15 +63,30 @@ export const createOrderFromCart = async (req, res) => {
 
     const { customer, shipping, payment, notes, couponCode } = req.body;
 
-    if (!customer?.fullName || !customer?.email || !customer?.phone) {
-      return res.status(400).json({
-        message: "Faltan datos del cliente",
-      });
-    }
+    const normalizedCustomer = {
+      fullName: String(customer?.fullName || "").trim(),
+      email: normalizeEmail(customer?.email),
+      phone: normalizePhoneCL(customer?.phone),
+      rut: formatRut(customer?.rut || ""),
+    };
 
-    if (!shipping?.region || !shipping?.city || !shipping?.address) {
+    const normalizedShipping = {
+      region: String(shipping?.region || "").trim(),
+      city: String(shipping?.city || "").trim(),
+      address: String(shipping?.address || "").trim(),
+      addressLine2: String(shipping?.addressLine2 || "").trim() || null,
+      reference: String(shipping?.reference || "").trim() || null,
+    };
+
+    const errors = validateCheckoutPayload({
+      customer: normalizedCustomer,
+      shipping: normalizedShipping,
+    });
+
+    if (Object.keys(errors).length > 0) {
       return res.status(400).json({
-        message: "Faltan datos de envío",
+        message: "Hay campos inválidos en el checkout",
+        errors,
       });
     }
 
@@ -103,17 +127,9 @@ export const createOrderFromCart = async (req, res) => {
       guest_id: req.user?.id ? null : req.headers["x-guest-id"] || null,
       items: validatedItems,
       total: itemsTotal,
-      customer: {
-        fullName: customer.fullName,
-        email: customer.email,
-        phone: customer.phone,
-      },
+      customer: normalizedCustomer,
       shipping: {
-        region: shipping.region,
-        city: shipping.city,
-        address: shipping.address,
-        addressLine2: shipping.addressLine2 || null,
-        reference: shipping.reference || null,
+        ...normalizedShipping,
         amount: 0,
         carrier: "blueexpress",
         service_name: null,
@@ -141,7 +157,7 @@ export const createOrderFromCart = async (req, res) => {
       },
       status: "pending",
       source: "cart",
-      notes: notes || null,
+      notes: String(notes || "").trim() || null,
     });
 
     cart.status = "converted";

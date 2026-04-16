@@ -15,6 +15,14 @@ const categorySchema = new mongoose.Schema(
       unique: true,
       lowercase: true,
     },
+    image: {
+      type: String, // URL
+      default: null,
+    },
+    is_featured: {
+      type: Boolean,
+      default: false,
+    },
     is_active: {
       type: Boolean,
       default: true,
@@ -22,7 +30,7 @@ const categorySchema = new mongoose.Schema(
   },
   {
     timestamps: { createdAt: "created_at", updatedAt: "updated_at" },
-  }
+  },
 );
 
 export default mongoose.model("Category", categorySchema);
