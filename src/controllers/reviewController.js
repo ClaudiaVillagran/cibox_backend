@@ -6,6 +6,11 @@ import {
   createNotification,
   createNotificationsForRole,
 } from "../utils/notification.js";
+// import {
+//   notifyReviewCreated,
+//   createNotificationsForRole,
+//   createNotification,
+// } from "../services/notificationService.js";
 import { updateProductRatingStats } from "../utils/review.js";
 
 export const createReview = async (req, res) => {
@@ -69,6 +74,18 @@ export const createReview = async (req, res) => {
         rating: review.rating,
       },
     });
+
+//    try {
+//   await notifyReviewCreated({
+//     userId,
+//     productName: product.name,
+//     reviewId: review._id,
+//     productId: product._id,
+//     rating: review.rating,
+//   });
+// } catch (emailError) {
+//   console.error("EMAIL REVIEW ERROR:", emailError.message);
+// }
 
     await createNotificationsForRole({
       role: "admin",

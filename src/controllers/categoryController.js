@@ -9,9 +9,10 @@ const generateSlug = (text) => {
     .replace(/\s+/g, "-")
     .replace(/[^a-z0-9-]/g, "");
 };
+
 export const createCategory = async (req, res) => {
   try {
-    const { name, image, is_featured } = req.body;
+    const { name, image, is_featured, parent_id } = req.body;
 
     if (!name) {
       return res.status(400).json({
@@ -19,15 +20,26 @@ export const createCategory = async (req, res) => {
       });
     }
 
+    if (parent_id) {
+      const parent = await Category.findById(parent_id);
+
+      if (!parent) {
+        return res.status(404).json({
+          message: "La categoría padre no existe",
+        });
+      }
+    }
+
     const slug = generateSlug(name);
 
     const existingCategory = await Category.findOne({
-      $or: [{ name }, { slug }],
+      name,
+      parent_id: parent_id || null,
     });
 
     if (existingCategory) {
       return res.status(400).json({
-        message: "La categoría ya existe",
+        message: "La categoría ya existe en ese nivel",
       });
     }
 
@@ -36,6 +48,8 @@ export const createCategory = async (req, res) => {
       slug,
       image: image || null,
       is_featured: is_featured || false,
+      is_active: true,
+      parent_id: parent_id || null,
     });
 
     res.status(201).json({
@@ -51,7 +65,9 @@ export const createCategory = async (req, res) => {
 };
 export const getCategories = async (req, res) => {
   try {
-    const categories = await Category.find({ is_active: true }).sort({ name: 1 });
+    const categories = await Category.find({ is_active: true }).sort({
+      name: 1,
+    });
 
     res.json(categories);
   } catch (error) {
@@ -92,10 +108,14 @@ export const updateCategory = async (req, res) => {
       updateData.slug = generateSlug(name);
     }
 
-    const category = await Category.findByIdAndUpdate(req.params.id, updateData, {
-      new: true,
-      runValidators: true,
-    });
+    const category = await Category.findByIdAndUpdate(
+      req.params.id,
+      updateData,
+      {
+        new: true,
+        runValidators: true,
+      },
+    );
 
     if (!category) {
       return res.status(404).json({
@@ -120,7 +140,7 @@ export const deactivateCategory = async (req, res) => {
     const category = await Category.findByIdAndUpdate(
       req.params.id,
       { is_active: false },
-      { new: true }
+      { new: true },
     );
 
     if (!category) {
@@ -142,7 +162,7 @@ export const deactivateCategory = async (req, res) => {
 };
 
 export const getFeaturedCategories = async (req, res) => {
-  console.log('object');
+  console.log("object");
   try {
     const categories = await Category.find({
       is_active: true,
@@ -154,6 +174,27 @@ export const getFeaturedCategories = async (req, res) => {
   } catch (error) {
     res.status(500).json({
       message: "Error al obtener categorías destacadas",
+      error: error.message,
+    });
+  }
+};
+export const getCategoriesTree = async (req, res) => {
+  try {
+    const categories = await Category.find({ is_active: true }).sort({ name: 1 });
+
+    const parents = categories.filter((cat) => !cat.parent_id);
+
+    const tree = parents.map((parent) => ({
+      ...parent.toObject(),
+      children: categories.filter(
+        (cat) => String(cat.parent_id) === String(parent._id)
+      ),
+    }));
+
+    res.json(tree);
+  } catch (error) {
+    res.status(500).json({
+      message: "Error al obtener árbol de categorías",
       error: error.message,
     });
   }

@@ -2,6 +2,8 @@ import Order from "../models/Order.js";
 import pkg from "transbank-sdk";
 import { webpayOptions } from "../config/webpay.js";
 import { createShipmentForPaidOrder } from "./shippingController.js";
+import { sendEmail } from "../services/emailService.js";
+import { buildPaymentApprovedTemplate } from "../utils/emailTemplates.js";
 
 const { WebpayPlus } = pkg;
 
@@ -25,7 +27,6 @@ const getFrontendUrls = (order) => {
       : process.env.FRONTEND_FAILED_URL,
   };
 };
-
 export const createWebpayTransaction = async (req, res) => {
   try {
     const { orderId, platform } = req.body;
@@ -40,12 +41,26 @@ export const createWebpayTransaction = async (req, res) => {
       return res.status(404).json({ message: "Orden no encontrada" });
     }
 
-    if (String(order.user_id) !== String(req.user.id)) {
+    const guestId = req.headers["x-guest-id"];
+
+    const isOwnerUser =
+      req.user?.id && String(order.user_id) === String(req.user.id);
+
+    const isOwnerGuest =
+      !req.user?.id &&
+      guestId &&
+      String(order.guest_id || "") === String(guestId);
+
+    if (!isOwnerUser && !isOwnerGuest) {
       return res.status(403).json({ message: "No autorizado" });
     }
 
     const buyOrder = buildBuyOrder(order._id);
-    const sessionId = String(req.user.id).slice(-20);
+
+    const sessionId = isOwnerUser
+      ? String(req.user.id).slice(-20)
+      : String(order.guest_id || `guest_${order._id}`).slice(-20);
+
     const amount = Math.round(order.total);
     const returnUrl = process.env.WEBPAY_RETURN_URL;
 
@@ -62,7 +77,7 @@ export const createWebpayTransaction = async (req, res) => {
       buy_order: buyOrder,
       session_id: sessionId,
       amount,
-      platform: platform || "native",
+      platform: platform || "web",
     };
 
     await order.save();
@@ -97,11 +112,20 @@ export const commitWebpayTransaction = async (req, res) => {
       return res.status(404).json({ message: "Orden no encontrada" });
     }
 
-    if (String(order.user_id) !== String(req.user.id)) {
+    const guestId = req.headers["x-guest-id"];
+
+    const isOwnerUser =
+      req.user?.id && String(order.user_id) === String(req.user.id);
+
+    const isOwnerGuest =
+      !req.user?.id &&
+      guestId &&
+      String(order.guest_id || "") === String(guestId);
+
+    if (!isOwnerUser && !isOwnerGuest) {
       return res.status(403).json({ message: "No autorizado para esta orden" });
     }
 
-    // Evitar doble commit también aquí
     if (order.payment?.status === "approved" || order.status === "paid") {
       return res.status(200).json({
         message: "Pago ya confirmado previamente",
@@ -132,6 +156,25 @@ export const commitWebpayTransaction = async (req, res) => {
 
     order.status = isApproved ? "paid" : "pending";
     await order.save();
+
+    if (isApproved && order.customer?.email) {
+      const emailTemplate = buildPaymentApprovedTemplate({
+        name: order.customer?.fullName || "cliente",
+        orderId: order._id,
+        total: order.total,
+      });
+
+      try {
+        await sendEmail({
+          to: order.customer.email,
+          subject: emailTemplate.subject,
+          text: emailTemplate.text,
+          html: emailTemplate.html,
+        });
+      } catch (emailError) {
+        console.error("PAYMENT APPROVED EMAIL ERROR:", emailError.message);
+      }
+    }
 
     return res.status(200).json({
       message: isApproved ? "Pago confirmado" : "Pago rechazado",

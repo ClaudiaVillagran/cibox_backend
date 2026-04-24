@@ -1,15 +1,16 @@
 import express from "express";
-import { protect } from "../middlewares/authMiddleware.js";
 import {
   previewShipping,
   quoteShipping,
   applyShippingToOrder,
 } from "../controllers/shippingController.js";
+import { optionalAuth } from "../middlewares/optionalAuthMiddleware.js";
+import { protect } from "../middlewares/authMiddleware.js";
 
 const router = express.Router();
 
-router.post("/preview", protect, previewShipping);
+router.post("/preview", optionalAuth, previewShipping);
 router.post("/quote", protect, quoteShipping);
-router.post("/apply", protect, applyShippingToOrder);
+router.post("/apply", optionalAuth, applyShippingToOrder);
 
 export default router;

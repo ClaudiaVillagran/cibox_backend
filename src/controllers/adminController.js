@@ -6,7 +6,12 @@ import {
   createNotification,
   createNotificationsForRole,
 } from "../utils/notification.js";
-
+import { sendEmail } from "../services/emailService.js";
+import {
+  buildOrderStatusChangedTemplate,
+  buildVendorApprovedTemplate,
+  buildProductDeactivatedTemplate,
+} from "../utils/emailTemplates.js";
 export const getDashboardStats = async (req, res) => {
   try {
     const [
@@ -150,7 +155,9 @@ export const getTopSellingProducts = async (req, res) => {
 
 export const getAllUsers = async (req, res) => {
   try {
-    const users = await User.find().select("-password").sort({ created_at: -1 });
+    const users = await User.find()
+      .select("-password")
+      .sort({ created_at: -1 });
 
     res.json(users);
   } catch (error) {
@@ -174,7 +181,7 @@ export const updateUserRole = async (req, res) => {
     const user = await User.findByIdAndUpdate(
       req.params.id,
       { role },
-      { new: true, runValidators: true }
+      { new: true, runValidators: true },
     ).select("-password");
 
     if (!user) {
@@ -232,7 +239,7 @@ export const updateOrderStatus = async (req, res) => {
     const order = await Order.findByIdAndUpdate(
       req.params.id,
       { status },
-      { new: true, runValidators: true }
+      { new: true, runValidators: true },
     );
 
     if (!order) {
@@ -264,7 +271,25 @@ export const updateOrderStatus = async (req, res) => {
         },
       });
     }
+    if (order.customer?.email) {
+      const emailTemplate = buildOrderStatusChangedTemplate({
+        name: order.customer?.fullName || "cliente",
+        orderId: order._id,
+        status: order.status,
+        trackingNumber: order.shipping?.tracking_number || null,
+      });
 
+      try {
+        await sendEmail({
+          to: order.customer.email,
+          subject: emailTemplate.subject,
+          text: emailTemplate.text,
+          html: emailTemplate.html,
+        });
+      } catch (emailError) {
+        console.error("ORDER STATUS EMAIL ERROR:", emailError.message);
+      }
+    }
     res.json({
       message: "Estado de la orden actualizado correctamente",
       order,
@@ -298,7 +323,7 @@ export const approveVendor = async (req, res) => {
     const vendor = await Vendor.findByIdAndUpdate(
       req.params.id,
       { approved: true },
-      { new: true }
+      { new: true },
     ).populate("user_id", "name email role");
 
     if (!vendor) {
@@ -317,6 +342,23 @@ export const approveVendor = async (req, res) => {
         store_name: vendor.store_name,
       },
     });
+    if (vendor.user_id?.email) {
+      const emailTemplate = buildVendorApprovedTemplate({
+        name: vendor.user_id?.name || "usuario",
+        storeName: vendor.store_name,
+      });
+
+      try {
+        await sendEmail({
+          to: vendor.user_id.email,
+          subject: emailTemplate.subject,
+          text: emailTemplate.text,
+          html: emailTemplate.html,
+        });
+      } catch (emailError) {
+        console.error("VENDOR APPROVED EMAIL ERROR:", emailError.message);
+      }
+    }
 
     res.json({
       message: "Vendor aprobado correctamente",
@@ -370,6 +412,28 @@ export const toggleProductActive = async (req, res) => {
             product_name: product.name,
           },
         });
+        const vendorUser = await User.findById(vendor.user_id);
+
+        if (vendorUser?.email) {
+          const emailTemplate = buildProductDeactivatedTemplate({
+            name: vendorUser.name || "usuario",
+            productName: product.name,
+          });
+
+          try {
+            await sendEmail({
+              to: vendorUser.email,
+              subject: emailTemplate.subject,
+              text: emailTemplate.text,
+              html: emailTemplate.html,
+            });
+          } catch (emailError) {
+            console.error(
+              "PRODUCT DEACTIVATED EMAIL ERROR:",
+              emailError.message,
+            );
+          }
+        }
       }
     }
 

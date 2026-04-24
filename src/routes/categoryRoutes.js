@@ -3,6 +3,7 @@ import {
   createCategory,
   deactivateCategory,
   getCategories,
+  getCategoriesTree,
   getCategoryById,
   getFeaturedCategories,
   updateCategory,
@@ -15,7 +16,7 @@ const router = express.Router();
 router.get("/featured", getFeaturedCategories);
 router.get("/", getCategories);
 router.get("/:id", getCategoryById);
-
+router.get("/tree", getCategoriesTree);
 router.post("/", protect, authorize("admin"), createCategory);
 router.put("/:id", protect, authorize("admin"), updateCategory);
 router.patch("/:id/deactivate", protect, authorize("admin"), deactivateCategory);

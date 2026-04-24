@@ -6,17 +6,15 @@ const categorySchema = new mongoose.Schema(
       type: String,
       required: true,
       trim: true,
-      unique: true,
     },
     slug: {
       type: String,
       required: true,
       trim: true,
-      unique: true,
       lowercase: true,
     },
     image: {
-      type: String, // URL
+      type: String,
       default: null,
     },
     is_featured: {
@@ -27,10 +25,18 @@ const categorySchema = new mongoose.Schema(
       type: Boolean,
       default: true,
     },
+    parent_id: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Category",
+      default: null,
+    },
   },
   {
     timestamps: { createdAt: "created_at", updatedAt: "updated_at" },
-  },
+  }
 );
+
+categorySchema.index({ name: 1, parent_id: 1 }, { unique: true });
+categorySchema.index({ slug: 1, parent_id: 1 }, { unique: true });
 
 export default mongoose.model("Category", categorySchema);

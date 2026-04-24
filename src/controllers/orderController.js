@@ -4,6 +4,10 @@ import Product from "../models/Product.js";
 import Coupon from "../models/Coupon.js";
 import CouponUsage from "../models/CouponUsage.js";
 import Vendor from "../models/Vendor.js";
+
+import { sendEmail } from "../services/emailService.js";
+import { buildOrderCreatedTemplate } from "../utils/emailTemplates.js";
+
 import {
   createNotification,
   createNotificationsForRole,
@@ -119,7 +123,7 @@ export const createOrderFromCart = async (req, res) => {
 
     const itemsTotal = validatedItems.reduce(
       (acc, item) => acc + Number(item.subtotal || 0),
-      0
+      0,
     );
 
     const order = await Order.create({
@@ -162,6 +166,25 @@ export const createOrderFromCart = async (req, res) => {
 
     cart.status = "converted";
     await cart.save();
+
+    if (normalizedCustomer.email) {
+      const emailTemplate = buildOrderCreatedTemplate({
+        name: normalizedCustomer.fullName || "cliente",
+        orderId: order._id,
+        total: order.total,
+      });
+
+      try {
+        await sendEmail({
+          to: normalizedCustomer.email,
+          subject: emailTemplate.subject,
+          text: emailTemplate.text,
+          html: emailTemplate.html,
+        });
+      } catch (emailError) {
+        console.error("ORDER CREATED EMAIL ERROR:", emailError.message);
+      }
+    }
 
     return res.status(201).json({
       message: "Orden creada correctamente desde el carrito",
@@ -207,7 +230,7 @@ export const createOrderFromCustomBox = async (req, res) => {
 
     const itemsTotal = items.reduce(
       (acc, item) => acc + Number(item.subtotal || 0),
-      0
+      0,
     );
 
     const order = await Order.create({
@@ -241,6 +264,24 @@ export const createOrderFromCustomBox = async (req, res) => {
       },
       notes: req.body.notes || null,
     });
+    if (req.body.customer?.email) {
+      const emailTemplate = buildOrderCreatedTemplate({
+        name: req.body.customer?.fullName || "cliente",
+        orderId: order._id,
+        total: order.total,
+      });
+
+      try {
+        await sendEmail({
+          to: req.body.customer.email,
+          subject: emailTemplate.subject,
+          text: emailTemplate.text,
+          html: emailTemplate.html,
+        });
+      } catch (emailError) {
+        console.error("CUSTOM BOX ORDER EMAIL ERROR:", emailError.message);
+      }
+    }
 
     return res.status(201).json({
       message: "Orden creada correctamente",
@@ -328,7 +369,9 @@ export const getOrderById = async (req, res) => {
 export const getGuestOrderById = async (req, res) => {
   try {
     const { id } = req.params;
-    const email = String(req.query.email || "").trim().toLowerCase();
+    const email = String(req.query.email || "")
+      .trim()
+      .toLowerCase();
 
     if (!email) {
       return res.status(400).json({

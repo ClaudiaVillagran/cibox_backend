@@ -1,7 +1,11 @@
 import Vendor from "../models/Vendor.js";
 import User from "../models/User.js";
 import { createNotificationsForRole } from "../utils/notification.js";
-
+import { sendEmail } from "../services/emailService.js";
+import {
+  buildVendorRequestReceivedTemplate,
+  buildVendorDeactivatedTemplate,
+} from "../utils/emailTemplates.js";
 export const createVendor = async (req, res) => {
   try {
     const { user_id, store_name, description } = req.body;
@@ -48,6 +52,23 @@ export const createVendor = async (req, res) => {
         store_name: vendor.store_name,
       },
     });
+    if (user.email) {
+      const emailTemplate = buildVendorRequestReceivedTemplate({
+        name: user.name || "usuario",
+        storeName: vendor.store_name,
+      });
+
+      try {
+        await sendEmail({
+          to: user.email,
+          subject: emailTemplate.subject,
+          text: emailTemplate.text,
+          html: emailTemplate.html,
+        });
+      } catch (emailError) {
+        console.error("VENDOR REQUEST EMAIL ERROR:", emailError.message);
+      }
+    }
 
     res.status(201).json({
       message: "Vendor creado correctamente",
@@ -166,7 +187,23 @@ export const deactivateVendor = async (req, res) => {
       user.role = "customer";
       await user.save();
     }
+    if (user?.email) {
+      const emailTemplate = buildVendorDeactivatedTemplate({
+        name: user.name || "usuario",
+        storeName: vendor.store_name,
+      });
 
+      try {
+        await sendEmail({
+          to: user.email,
+          subject: emailTemplate.subject,
+          text: emailTemplate.text,
+          html: emailTemplate.html,
+        });
+      } catch (emailError) {
+        console.error("VENDOR DEACTIVATED EMAIL ERROR:", emailError.message);
+      }
+    }
     res.json({
       message: "Vendor desactivado correctamente",
       vendor,
